@@ -1,6 +1,6 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
-
+from django.core.validators import RegexValidator
 
 #  Custom User Manager
 class UserManager(BaseUserManager):
@@ -39,13 +39,21 @@ class User(AbstractUser):
     username = models.CharField(max_length=150, unique=True)
 
     # ✅ use email for login
-    email = models.EmailField(unique=True)
+    email = models.EmailField(unique=True, db_index=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
 
     # 🔥 attach manager
     objects = UserManager()
+
+    phone = models.CharField(
+    max_length=15,
+    unique=True,
+    validators=[RegexValidator(r'^\+?\d{10,15}$', "Enter valid phone number")],
+    null=True,
+    blank=True
+)
 
     # 🔹 custom fields
     dob = models.DateField(null=True, blank=True)
