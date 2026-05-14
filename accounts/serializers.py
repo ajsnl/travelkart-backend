@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import User
 from django.contrib.auth import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -48,3 +49,40 @@ class LoginSerializer(serializers.Serializer):
 
         data['user'] = user  # 🔥 attach user object
         return data
+    
+class ProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['email', 'username', 'phone', 'dob']
+
+    def update(self, instance, validated_data):
+        new_email = validated_data.get('email', instance.email)
+
+        # 🔥 check if email changed
+        if instance.email != new_email:
+            instance.is_verified = False  # ❗ reset verification
+
+        return super().update(instance, validated_data)
+
+
+
+
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField()
+
+    def validate(self, data):
+        self.token = data['refresh']
+        return data
+
+    def save(self):
+        try:
+            token = RefreshToken(self.token)
+            token.blacklist()  # 🔥 blacklist token
+        except Exception:
+            raise serializers.ValidationError("Invalid or expired token")
+        
+class SendEmailOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()   
+
+class VerifyEmailOTPSerializer(serializers.Serializer):
+    otp = serializers.CharField()    

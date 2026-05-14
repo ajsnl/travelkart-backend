@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.core.validators import RegexValidator
+from django.conf import settings
+from django.utils import timezone
 
 #  Custom User Manager
 class UserManager(BaseUserManager):
@@ -69,6 +71,7 @@ class User(AbstractUser):
 
     # ✅ use built-in auth control
     is_active = models.BooleanField(default=True)
+    temp_email = models.EmailField(null=True, blank=True)
 
     is_verified = models.BooleanField(default=False)
 
@@ -81,3 +84,25 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+    
+
+
+
+class OTP(models.Model):
+
+    PURPOSE_CHOICES = [
+        ('email_verify', 'Email Verify'),
+        ('password_reset', 'Password Reset'),
+    ]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    otp_code = models.CharField(max_length=6)
+    purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES)
+
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        return timezone.now() > self.expires_at   
