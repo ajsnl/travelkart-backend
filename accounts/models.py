@@ -74,6 +74,7 @@ class User(AbstractUser):
     temp_email = models.EmailField(null=True, blank=True)
 
     is_verified = models.BooleanField(default=False)
+    reset_otp_verified = models.BooleanField(default=False)
 
     is_gold_member = models.BooleanField(default=False)
     gold_purchased_at = models.DateTimeField(null=True, blank=True)
@@ -106,3 +107,5 @@ class OTP(models.Model):
 
     def is_expired(self):
         return timezone.now() > self.expires_at   
+
+        

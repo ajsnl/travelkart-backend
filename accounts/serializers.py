@@ -2,14 +2,17 @@ from rest_framework import serializers
 from .models import User
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.password_validation import validate_password
+from .utils import StrongPasswordValidator
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ['email', 'username', 'password', 'phone', 'dob']
+        fields = ['email', 'username', 'password', 'confirm_password', 'phone', 'dob']
 
     def validate_email(self, value):
         return value.lower()
@@ -19,7 +22,20 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Username must be at least 3 characters")
         return value
 
+    def validate(self, data):
+        password = data['password']
+
+        # ✅ confirm password check
+        if password != data['confirm_password']:
+            raise serializers.ValidationError("Passwords do not match")
+
+        # ✅ use global validator
+        StrongPasswordValidator()(password)
+
+        return data
+
     def create(self, validated_data):
+        validated_data.pop('confirm_password')  # remove extra field
         password = validated_data.pop('password')
 
         user = User.objects.create_user(
@@ -85,4 +101,49 @@ class SendEmailOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()   
 
 class VerifyEmailOTPSerializer(serializers.Serializer):
-    otp = serializers.CharField()    
+    otp = serializers.CharField(max_length=6)
+
+class VerifyForgotPasswordOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=6)
+
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    new_password = serializers.CharField(min_length=8)
+    confirm_password = serializers.CharField()
+
+    def validate(self, data):
+        password = data['new_password']
+
+        # ✅ confirm password check
+        if password != data['confirm_password']:
+            raise serializers.ValidationError("Passwords do not match")
+
+        # ✅ strong password validation
+        StrongPasswordValidator()(password)
+
+        return data
+
+
+import re
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
+    confirm_password = serializers.CharField(required=True)
+
+    def validate(self, data):
+        user = self.context['request'].user
+        password = data['new_password']
+
+        # ✅ match passwords
+        if password != data['confirm_password']:
+            raise serializers.ValidationError("Passwords do not match")
+        
+        StrongPasswordValidator()(password, user)
+
+
+
+        return data

@@ -4,7 +4,10 @@ from django.shortcuts import render
 from rest_framework import generics, mixins
 from .models import User,OTP
 from django.utils import timezone
-from .serializers import RegisterSerializer,LoginSerializer,ProfileSerializer,LogoutSerializer,SendEmailOTPSerializer,VerifyEmailOTPSerializer
+from django.contrib.auth import get_user_model
+from datetime import timedelta
+from .serializers import RegisterSerializer,LoginSerializer,ProfileSerializer,LogoutSerializer,SendEmailOTPSerializer,VerifyEmailOTPSerializer,VerifyForgotPasswordOTPSerializer,ResetPasswordSerializer
+from .serializers import ChangePasswordSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .serializers import LoginSerializer
@@ -35,7 +38,8 @@ class LoginView(mixins.CreateModelMixin, generics.GenericAPIView):
             "user": {
                 "email": user.email,
                 "username": user.username,
-                "phone": user.phone
+                "phone": user.phone,
+                "is_verified": user.is_verified
             },
             "refresh": str(refresh),
             "access": str(refresh.access_token),
@@ -166,48 +170,212 @@ class VerifyEmailOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
 
         return Response({"message": "Email verified successfully"}, status=200)
 
+from django.utils import timezone
+from datetime import timedelta
+
 class ForgotPasswordView(generics.GenericAPIView):
+    serializer_class = SendEmailOTPSerializer
+
     def post(self, request):
-        email = request.data.get('email')
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data['email']
+
+        if not email:
+            return Response({"error": "Email is required"}, status=400)
 
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
 
-        otp_obj = create_otp(user, 'password_reset')
+        # 🔥 1. Cooldown check (60 sec)
+        last_otp = OTP.objects.filter(
+            user=user,
+            purpose="password_reset"
+        ).order_by('-created_at').first()
+
+        if last_otp and (timezone.now() - last_otp.created_at).seconds < 60:
+            return Response(
+                {"error": "Please wait before requesting another OTP"},
+                status=429
+            )
+
+        # 🔥 2. Invalidate old OTPs
+        OTP.objects.filter(
+            user=user,
+            purpose="password_reset",
+            is_used=False
+        ).update(is_used=True)
+
+        # 🔥 3. Create new OTP
+        otp_obj = create_otp(user, "password_reset")
 
         print("OTP:", otp_obj.otp_code)
 
-        return Response({"message": "OTP sent"})  
+        return Response({"message": "OTP sent successfully"}, status=200)
     
-class ResetPasswordView(generics.GenericAPIView):
-    def post(self, request):
-        email = request.data.get('email')
-        otp_code = request.data.get('otp')
-        new_password = request.data.get('password')
 
+
+User = get_user_model()
+
+class ForgotPasswordVerifyOTPView(generics.GenericAPIView):
+    serializer_class = VerifyForgotPasswordOTPSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data['email']
+        otp_code = serializer.validated_data['otp']
+
+
+        # 🔥 2. Get user
         try:
             user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"error": "Invalid credentials"}, status=400)
 
-            otp = OTP.objects.filter(
-                user=user,
-                otp_code=otp_code,
-                purpose='password_reset',
-                is_used=False
-            ).latest('created_at')
+        # 🔥 3. Get latest OTP
+        otp = OTP.objects.filter(
+            user=user,
+            otp_code=otp_code,
+            purpose="password_reset",
+            is_used=False
+        ).order_by('-created_at').first()
 
-        except:
+        if not otp:
             return Response({"error": "Invalid OTP"}, status=400)
 
+        # 🔥 4. Check expiry
         if otp.is_expired():
             return Response({"error": "OTP expired"}, status=400)
 
-        # ✅ reset password
-        user.set_password(new_password)
-        user.save()
-
+        # 🔥 5. Mark OTP used
         otp.is_used = True
         otp.save()
 
-        return Response({"message": "Password reset successful"})    
+        # 🔥 6. Allow password reset
+        user.reset_otp_verified = True
+        user.save()
+
+        return Response(
+            {"message": "OTP verified successfully"},
+            status=200
+        )
+
+
+
+
+class ResendOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+
+    def post(self, request):
+        user = request.user
+
+        # 🔍 get last OTP
+        last_otp = OTP.objects.filter(
+            user=user,
+            purpose='email_verify'
+        ).order_by('-created_at').first()
+
+        # ⏱️ cooldown check (60 sec)
+        if last_otp:
+            diff = timezone.now() - last_otp.created_at
+
+            if diff < timedelta(seconds=60):
+                remaining = 60 - int(diff.total_seconds())
+                return Response(
+                    {"error": f"Wait {remaining}s before requesting new OTP"},
+                    status=400
+                )
+
+        # ❌ invalidate old OTPs
+        OTP.objects.filter(
+            user=user,
+            purpose='email_verify',
+            is_used=False
+        ).update(is_used=True)
+
+        # 🔐 create new OTP
+        otp_obj = create_otp(user, 'email_verify')
+
+        print("RESEND OTP:", otp_obj.otp_code)
+
+        return Response({"message": "OTP resent successfully"}, status=200)
+    
+class ResetPasswordView(generics.GenericAPIView):
+    serializer_class = ResetPasswordSerializer
+
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data['email']
+        new_password = serializer.validated_data['new_password']
+
+
+
+        # 🔥 2. Get user
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"error": "Invalid credentials"}, status=400)
+
+        # 🔥 3. Check OTP verified
+        if not user.reset_otp_verified:
+            return Response(
+                {"error": "OTP not verified"},
+                status=403
+            )
+
+        # 🔥 4. Reset password
+        user.set_password(new_password)
+
+        # 🔥 5. Reset flag (VERY IMPORTANT)
+        user.reset_otp_verified = False
+        user.save()
+
+        # 🔥 6. Invalidate any remaining OTPs
+        OTP.objects.filter(
+            user=user,
+            purpose="password_reset",
+            is_used=False
+        ).update(is_used=True)
+
+        return Response(
+            {"message": "Password reset successful"},
+            status=200
+        )    
+    
+
+class ChangePasswordView(generics.GenericAPIView):
+    serializer_class = ChangePasswordSerializer
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        old_password = serializer.validated_data['old_password']
+        new_password = serializer.validated_data['new_password']
+
+        # ✅ check old password
+        if not user.check_password(old_password):
+            return Response(
+                {"error": "Old password is incorrect"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ set new password
+        user.set_password(new_password)
+        user.save()
+
+        return Response(
+            {"message": "Password changed successfully"},
+            status=status.HTTP_200_OK
+        )    
