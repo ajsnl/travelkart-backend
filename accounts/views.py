@@ -1,13 +1,13 @@
 from django.shortcuts import render
 
 # Create your views here.
-from rest_framework import generics, mixins
-from .models import User,OTP
+from rest_framework import generics, mixins,viewsets
+from .models import User,OTP,Address
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from datetime import timedelta
 from .serializers import RegisterSerializer,LoginSerializer,ProfileSerializer,LogoutSerializer,SendEmailOTPSerializer,VerifyEmailOTPSerializer,VerifyForgotPasswordOTPSerializer,ResetPasswordSerializer
-from .serializers import ChangePasswordSerializer
+from .serializers import ChangePasswordSerializer,AddressSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .serializers import LoginSerializer
@@ -379,3 +379,59 @@ class ChangePasswordView(generics.GenericAPIView):
             {"message": "Password changed successfully"},
             status=status.HTTP_200_OK
         )    
+
+
+from rest_framework.decorators import action
+class AddressViewSet(viewsets.ModelViewSet):
+    serializer_class = AddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user)
+    def perform_create(self, serializer):
+        user = self.request.user
+    # ✅ if first address → make default automatically
+        if not Address.objects.filter(user=user).exists():
+            serializer.save(user=user, is_default=True)
+            return
+    # ✅ if user sets default
+        if serializer.validated_data.get('is_default'):
+            Address.objects.filter(user=user, is_default=True).update(is_default=False)
+        serializer.save(user=user)
+    def perform_update(self, serializer):
+        if serializer.validated_data.get('is_default'):
+            Address.objects.filter(
+                user=self.request.user,
+                is_default=True
+            ).exclude(id=self.get_object().id).update(is_default=False)
+
+        serializer.save()    
+    def destroy(self, request, *args, **kwargs):
+        address = self.get_object()
+
+        if address.is_default:
+            return Response(
+                {"error": "Cannot delete default address"},
+                status=400
+            )
+
+        return super().destroy(request, *args, **kwargs)    
+    
+    
+
+
+    @action(detail=True, methods=['patch'])
+    def set_default(self, request, pk=None):
+        address = self.get_object()
+
+        Address.objects.filter(
+            user=request.user,
+            is_default=True
+        ).update(is_default=False)
+
+        address.is_default = True
+        address.save()
+
+        return Response({
+            "message": "Default address set successfully"
+        })

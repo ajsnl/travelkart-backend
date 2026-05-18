@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User
+from .models import User,Address
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.password_validation import validate_password
@@ -7,12 +7,14 @@ from .utils import StrongPasswordValidator
 
 
 class RegisterSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
     password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ['email', 'username', 'password', 'confirm_password', 'phone', 'dob']
+        fields = ['email', 'username', 'password', 'confirm_password', 'phone', 'dob','first_name', 'last_name']
 
     def validate_email(self, value):
         return value.lower()
@@ -33,7 +35,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         StrongPasswordValidator()(password)
 
         return data
-
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip()
+    
     def create(self, validated_data):
         validated_data.pop('confirm_password')  # remove extra field
         password = validated_data.pop('password')
@@ -65,22 +69,7 @@ class LoginSerializer(serializers.Serializer):
 
         data['user'] = user  # 🔥 attach user object
         return data
-    
-class ProfileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['email', 'username', 'phone', 'dob']
-
-    def update(self, instance, validated_data):
-        new_email = validated_data.get('email', instance.email)
-
-        # 🔥 check if email changed
-        if instance.email != new_email:
-            instance.is_verified = False  # ❗ reset verification
-
-        return super().update(instance, validated_data)
-
-
+ 
 
 
 class LogoutSerializer(serializers.Serializer):
@@ -147,3 +136,70 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
         return data
+    
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = '__all__'
+        read_only_fields = ['user']
+
+    def validate_phone(self, value):
+        # ✅ Only digits, 10–15 length
+        if not re.fullmatch(r'\d{10}', value):
+            raise serializers.ValidationError("Enter a valid phone number (10 digits)")
+        return value
+
+    def validate_pincode(self, value):
+        # ✅ Example: Indian pincode (6 digits)
+        if not re.fullmatch(r'\d{6}', value):
+            raise serializers.ValidationError("Enter a valid 6-digit pincode")
+        return value
+
+    def validate_city(self, value):
+        if not re.fullmatch(r'[A-Za-z ]+', value):
+            raise serializers.ValidationError("City must contain only letters and spaces")
+        return value.title().strip()
+
+    def validate_state(self, value):
+        if not re.fullmatch(r'[A-Za-z ]+', value):
+            raise serializers.ValidationError("State must contain only letters")
+        return value.title().strip()
+
+    def validate(self, data):
+        # ✅ get existing value if not provided in PATCH
+        address_line = data.get('address_line') or getattr(self.instance, 'address_line', '')
+
+        if len(address_line) < 10:
+            raise serializers.ValidationError("Address is too short")
+
+        return data
+
+   
+class ProfileSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField()
+    addresses = AddressSerializer(many=True, read_only=True)
+    joined_date = serializers.DateTimeField(source='date_joined', read_only=True)
+
+    class Meta:
+        model = User
+        fields = ['email',
+                   'username', 
+                   'phone', 
+                    'full_name',
+                    'dob',
+                    'is_gold_member',
+                    'joined_date',
+                    'addresses']
+
+    def update(self, instance, validated_data):
+        new_email = validated_data.get('email', instance.email)
+
+        # 🔥 check if email changed
+        if instance.email != new_email:
+            instance.is_verified = False  # ❗ reset verification
+
+        return super().update(instance, validated_data)
+    
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip()
+
