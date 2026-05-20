@@ -6,14 +6,16 @@ from .models import User,OTP,Address
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from datetime import timedelta
-from .serializers import RegisterSerializer,LoginSerializer,ProfileSerializer,LogoutSerializer,SendEmailOTPSerializer,VerifyEmailOTPSerializer,VerifyForgotPasswordOTPSerializer,ResetPasswordSerializer
+from .serializers import RegisterSerializer,LoginSerializer,ProfileSerializer,SendEmailOTPSerializer,VerifyEmailOTPSerializer,VerifyForgotPasswordOTPSerializer,ResetPasswordSerializer
 from .serializers import ChangePasswordSerializer,AddressSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .serializers import LoginSerializer
 from rest_framework import status
+from rest_framework.views import APIView
 from .utils import create_otp
 from rest_framework_simplejwt.tokens import RefreshToken
+
 
 class RegisterView(mixins.CreateModelMixin, generics.GenericAPIView):
     queryset = User.objects.all()
@@ -22,6 +24,8 @@ class RegisterView(mixins.CreateModelMixin, generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
     
+
+
 
 class LoginView(mixins.CreateModelMixin, generics.GenericAPIView):
     serializer_class = LoginSerializer
@@ -33,18 +37,64 @@ class LoginView(mixins.CreateModelMixin, generics.GenericAPIView):
         user = serializer.validated_data['user']
 
         refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
 
-        return Response({
+        response = Response({
             "user": {
                 "email": user.email,
                 "username": user.username,
                 "phone": user.phone,
                 "is_verified": user.is_verified
-            },
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
+            }
         }, status=status.HTTP_200_OK)
+
+        # 🍪 Set Access Token Cookie
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=False,   # ✅ True in production (HTTPS)
+            samesite="Lax"
+        )
+
+        # 🍪 Set Refresh Token Cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=False,
+            samesite="Lax"
+        )
+
+        return response
     
+
+class RefreshView(APIView):
+    def post(self, request):
+        refresh_token = request.COOKIES.get("refresh_token")
+
+        if not refresh_token:
+            return Response({"error": "No refresh token"}, status=401)
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            access_token = str(refresh.access_token)
+
+            response = Response({"message": "Token refreshed"})
+
+            response.set_cookie(
+                key="access_token",
+                value=access_token,
+                httponly=True,
+                secure=False,
+                samesite="Lax"
+            )
+
+            return response
+
+        except:
+            return Response({"error": "Invalid token"}, status=401)    
 
 class ProfileView(mixins.RetrieveModelMixin,
                   mixins.UpdateModelMixin,
@@ -70,19 +120,31 @@ class ProfileView(mixins.RetrieveModelMixin,
     
 
 
-class LogoutView(mixins.CreateModelMixin, generics.GenericAPIView):
-    serializer_class = LogoutSerializer
+
+class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        try:
+            refresh_token = request.COOKIES.get("refresh_token")
 
-        return Response({"message": "Logged out successfully"}, status=status.HTTP_205_RESET_CONTENT)    
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+
+        except Exception:
+            return Response({"error": "Invalid token"}, status=400)
+
+        response = Response(
+            {"message": "Logged out successfully"},
+            status=status.HTTP_205_RESET_CONTENT
+        )
+
+        response.delete_cookie("access_token")
+        response.delete_cookie("refresh_token")
+
+        return response 
     
-
-
 
 
 

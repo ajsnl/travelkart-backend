@@ -71,20 +71,6 @@ class LoginSerializer(serializers.Serializer):
         return data
  
 
-
-class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
-
-    def validate(self, data):
-        self.token = data['refresh']
-        return data
-
-    def save(self):
-        try:
-            token = RefreshToken(self.token)
-            token.blacklist()  # 🔥 blacklist token
-        except Exception:
-            raise serializers.ValidationError("Invalid or expired token")
         
 class SendEmailOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()   
