@@ -2,6 +2,8 @@ import random
 from datetime import timedelta
 from django.utils import timezone
 from .models import OTP
+from django.core.mail import send_mail
+from django.conf import settings
 
 
 def generate_otp():
@@ -16,6 +18,20 @@ def create_otp(user, purpose):
         otp_code=otp,
         purpose=purpose,
         expires_at=timezone.now() + timedelta(minutes=5)
+    )
+
+
+
+def send_otp_email(email, otp):
+    subject = "Your OTP Code"
+    message = f"Your OTP is: {otp}. It will expire soon."
+
+    send_mail(
+        subject,
+        message,
+        settings.EMAIL_HOST_USER,
+        [email],
+        fail_silently=False,
     )
 
 import re
