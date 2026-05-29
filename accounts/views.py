@@ -157,6 +157,11 @@ class UserMeView(APIView):
         return Response({
             "email": request.user.email,
             "username": request.user.username,
+            "phone": request.user.phone,
+            "is_verified": request.user.is_verified,
+            "is_gold_member": request.user.is_gold_member,
+            "DateOfBirth":request.user.dob
+
         })
 
 
@@ -209,6 +214,11 @@ class GoogleLogin(SocialLoginView):
     permission_classes = [AllowAny]
 
     def get_response(self):
+        # Mark user as verified if they log in via Google
+        if not self.user.is_verified:
+            self.user.is_verified = True
+            self.user.save()
+
         # Generate JWT tokens for the authenticated user
         refresh = RefreshToken.for_user(self.user)
         access_token = str(refresh.access_token)

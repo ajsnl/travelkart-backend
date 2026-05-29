@@ -4,6 +4,8 @@ from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.password_validation import validate_password
 from .utils import StrongPasswordValidator
+from allauth.socialaccount.models import SocialAccount
+import re
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -102,8 +104,6 @@ class ResetPasswordSerializer(serializers.Serializer):
         return data
 
 
-import re
-
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True)
@@ -118,8 +118,6 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError("Passwords do not match")
         
         StrongPasswordValidator()(password, user)
-
-
 
         return data
     
@@ -163,6 +161,7 @@ class AddressSerializer(serializers.ModelSerializer):
    
 class ProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
+    is_social = serializers.SerializerMethodField()
     addresses = AddressSerializer(many=True, read_only=True)
     joined_date = serializers.DateTimeField(source='date_joined', read_only=True)
 
@@ -170,12 +169,16 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = ['email',
                    'username', 
+                   'first_name',
+                   'last_name',
                    'phone', 
-                    'full_name',
-                    'dob',
-                    'is_gold_member',
-                    'joined_date',
-                    'addresses']
+                   'full_name',
+                   'dob',
+                   'is_gold_member',
+                   'joined_date',
+                   'addresses',
+                   'is_social',
+                   'is_verified']
 
     def update(self, instance, validated_data):
         new_email = validated_data.get('email', instance.email)
@@ -189,3 +192,5 @@ class ProfileSerializer(serializers.ModelSerializer):
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
 
+    def get_is_social(self, obj):
+        return SocialAccount.objects.filter(user=obj).exists()
