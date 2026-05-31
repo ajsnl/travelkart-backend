@@ -162,7 +162,8 @@ class UserMeView(APIView):
             "is_gold_member": request.user.is_gold_member,
             "DateOfBirth":request.user.dob,
             "profile_picture": request.user.profile_picture.url if request.user.profile_picture else None,
-            "updated_at": request.user.updated_at
+            "updated_at": request.user.updated_at,
+            "role": request.user.role
         })
 
 

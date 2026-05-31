@@ -17,42 +17,47 @@ class AdminUserListView(APIView):
     permission_classes = [IsAdminUserRole]
 
     def get(self, request):
-        search = request.GET.get('search', '')
-        is_active = request.GET.get('is_active')   # true / false
-        is_gold = request.GET.get('is_gold')       # true / false
+        search = request.GET.get('search')
+        is_active = request.GET.get('is_active')
+        is_gold = request.GET.get('is_gold')
 
-        users = User.objects.all()
+        users = User.objects.exclude(role='admin')
 
-        # 🔍 Search (email)
         if search:
             users = users.filter(
                 Q(email__icontains=search) |
                 Q(username__icontains=search)
-             )
+            )
 
-        # 🔐 Filter by active / blocked
-        if is_active is not None:
-            if is_active.lower() == "true":
-                users = users.filter(is_active=True)
-            elif is_active.lower() == "false":
-                users = users.filter(is_active=False)
+        if is_active is not None and is_active != "":
+            users = users.filter(is_active=str(is_active).lower() == "true")
 
-        # 💎 Filter by gold membership
-        if is_gold is not None:
-            if is_gold.lower() == "true":
-                users = users.filter(is_gold_member=True)
-            elif is_gold.lower() == "false":
-                users = users.filter(is_gold_member=False)
+        if is_gold is not None and is_gold != "":
+            users = users.filter(is_gold_member=str(is_gold).lower() == "true")
 
-        # ⬇️ Sort (latest first)
         users = users.order_by('-date_joined')
 
-        # 📄 Pagination
         paginator = UserPagination()
         paginated_users = paginator.paginate_queryset(users, request)
 
         serializer = AdminUserSerializer(paginated_users, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        response = paginator.get_paginated_response(serializer.data)
+
+        # Calculate statistics
+        non_admins = User.objects.exclude(role='admin')
+        total_members = non_admins.count()
+        total_gold_members = non_admins.filter(is_gold_member=True).count()
+        total_active_members = non_admins.filter(is_active=True).count()
+        unverified_users = non_admins.filter(is_verified=False).count()
+
+        response.data['stats'] = {
+            "total_members": total_members,
+            "total_gold_members": total_gold_members,
+            "total_active_members": total_active_members,
+            "unverified_users": unverified_users,
+        }
+
+        return response
     
 class ToggleUserBlockView(APIView):
     permission_classes = [IsAdminUserRole]
