@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from datetime import timedelta
 from .serializers import RegisterSerializer,LoginSerializer,ProfileSerializer,SendEmailOTPSerializer,VerifyEmailOTPSerializer,VerifyForgotPasswordOTPSerializer,ResetPasswordSerializer
-from .serializers import ChangePasswordSerializer,AddressSerializer
+from .serializers import ChangePasswordSerializer,AddressSerializer,ProfilePictureUploadSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .serializers import LoginSerializer
@@ -160,8 +160,9 @@ class UserMeView(APIView):
             "phone": request.user.phone,
             "is_verified": request.user.is_verified,
             "is_gold_member": request.user.is_gold_member,
-            "DateOfBirth":request.user.dob
-
+            "DateOfBirth":request.user.dob,
+            "profile_picture": request.user.profile_picture.url if request.user.profile_picture else None,
+            "updated_at": request.user.updated_at
         })
 
 
@@ -612,4 +613,26 @@ class AddressViewSet(viewsets.ModelViewSet):
             "message": "Default address set successfully"
         })
 
+from rest_framework.parsers import MultiPartParser, FormParser
 
+
+class UploadProfilePicture(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def patch(self, request):
+        user = request.user
+        serializer = ProfilePictureUploadSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            # If the user already had a profile picture, delete the old file from storage first.
+            if user.profile_picture:
+                try:
+                    user.profile_picture.delete(save=False)
+                except Exception as e:
+                    print(f"Error deleting old profile picture: {e}")
+            serializer.save()
+            return Response({
+                "message": "Profile picture updated",
+                "image_url": user.profile_picture.url
+            })
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

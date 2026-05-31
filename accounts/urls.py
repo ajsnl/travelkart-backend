@@ -1,5 +1,5 @@
 from django.urls import path,include
-from .views import RegisterView,LoginView,ProfileView,LogoutView,SendEmailOTPView,ResetPasswordView,VerifyEmailOTPView,ForgotPasswordView
+from .views import RegisterView,LoginView,ProfileView,LogoutView,SendEmailOTPView,ResetPasswordView,VerifyEmailOTPView,ForgotPasswordView,UploadProfilePicture
 from .views import ResendOTPView,ForgotPasswordVerifyOTPView,ChangePasswordView,AddressViewSet,RefreshView,UserMeView,get_csrf_token,GoogleLogin
 from rest_framework.routers import DefaultRouter
 
@@ -21,6 +21,7 @@ urlpatterns = [
     path("refresh/", RefreshView.as_view(), name="token_refresh"),
     path("user/me/", UserMeView.as_view()),
     path("csrf/", get_csrf_token),
+    path('upload-profile/', UploadProfilePicture.as_view()),
         # 🔥 ADD THESE BELOW (Google + dj-rest-auth)
 
     # dj-rest-auth endpoints (optional but useful)

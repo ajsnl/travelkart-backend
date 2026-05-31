@@ -56,6 +56,11 @@ class User(AbstractUser):
     null=True,
     blank=True
 )
+    profile_picture = models.ImageField(
+            upload_to='travelkart/profile_pics/',
+            null=True,
+            blank=True
+        )
 
     # 🔹 custom fields
     dob = models.DateField(null=True, blank=True)

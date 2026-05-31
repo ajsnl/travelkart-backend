@@ -51,8 +51,25 @@ INSTALLED_APPS = [
 
     'dj_rest_auth',
     'dj_rest_auth.registration',
+    'cloudinary',
+    'cloudinary_storage',
 ]
 SITE_ID = 1
+
+STORAGES = {
+    "default": {
+        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': 'dha3cwcvk',
+    'API_KEY': '284212296641187',
+    'API_SECRET': 'jRaSYXrgz4_u6N0uK_U7IxdSih4',
+}
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -197,3 +214,6 @@ ACCOUNT_UNIQUE_EMAIL = True
 SOCIALACCOUNT_AUTO_SIGNUP = True
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_EMAIL_VERIFICATION = "none" 
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR

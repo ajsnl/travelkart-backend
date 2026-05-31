@@ -13,6 +13,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     last_name = serializers.CharField()
     password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True)
+    profile_picture = serializers.ImageField(required=False)
 
     class Meta:
         model = User
@@ -178,7 +179,10 @@ class ProfileSerializer(serializers.ModelSerializer):
                    'joined_date',
                    'addresses',
                    'is_social',
-                   'is_verified']
+                   'is_verified',
+                   'profile_picture',
+                   'updated_at']
+        read_only_fields = ['is_gold_member', 'joined_date', 'addresses', 'is_social', 'is_verified', 'profile_picture', 'updated_at']
 
     def update(self, instance, validated_data):
         new_email = validated_data.get('email', instance.email)
@@ -194,3 +198,10 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     def get_is_social(self, obj):
         return SocialAccount.objects.filter(user=obj).exists()
+
+
+class ProfilePictureUploadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['profile_picture']
+
