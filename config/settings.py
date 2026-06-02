@@ -53,6 +53,9 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',
     'cloudinary',
     'cloudinary_storage',
+
+    'products',
+    
 ]
 SITE_ID = 1
 
