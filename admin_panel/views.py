@@ -43,7 +43,7 @@ class AdminUserListView(APIView):
         serializer = AdminUserSerializer(paginated_users, many=True)
         response = paginator.get_paginated_response(serializer.data)
 
-        # Calculate statistics
+        
         non_admins = User.objects.exclude(role='admin')
         total_members = non_admins.count()
         total_gold_members = non_admins.filter(is_gold_member=True).count()
@@ -76,14 +76,13 @@ class ToggleUserBlockView(APIView):
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
 
-        # 🚫 Prevent self-block
+        # Prevent self-block
         if request.user.id == user.id:
             return Response(
                 {"error": "You cannot block yourself"},
                 status=400
             )
 
-        # 🔁 Toggle block/unblock
         user.is_active = not user.is_active
         user.save()
 

@@ -15,15 +15,13 @@ def link_google_user(request, sociallogin, **kwargs):
     try:
         user = User.objects.get(email=email)
 
-        # 🔥 LINK EXISTING USER (PREVENT DUPLICATE)
+        #  LINK EXISTING USER (PREVENT DUPLICATE)
         sociallogin.connect(request, user)
 
-        # 🔥 SKIP OTP
         if not user.is_verified:
             user.is_verified = True
             user.save()
 
     except User.DoesNotExist:
-        # 🔥 NEW USER → MARK VERIFIED
         user = sociallogin.user
         user.is_verified = True

@@ -22,13 +22,12 @@ urlpatterns = [
     path("user/me/", UserMeView.as_view()),
     path("csrf/", get_csrf_token),
     path('upload-profile/', UploadProfilePicture.as_view()),
-        # 🔥 ADD THESE BELOW (Google + dj-rest-auth)
 
-    # dj-rest-auth endpoints (optional but useful)
+    # dj-rest-auth endpoints 
     path('dj-rest-auth/', include('dj_rest_auth.urls')),
     path('dj-rest-auth/registration/', include('dj_rest_auth.registration.urls')),
 
-    # 🔥 Google OAuth (REQUIRED)
+    #  Google OAuth
     path('social/', include('allauth.socialaccount.urls')),
     path('google/', GoogleLogin.as_view(), name='google_login'),
 ]

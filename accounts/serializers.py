@@ -17,7 +17,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['email', 'username', 'password', 'confirm_password', 'phone', 'dob','first_name', 'last_name']
+        fields = ['email', 'username', 'password', 'confirm_password', 'phone', 'dob','first_name', 'last_name','profile_picture']
 
     def validate_email(self, value):
         return value.lower()
@@ -30,11 +30,10 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, data):
         password = data['password']
 
-        # ✅ confirm password check
         if password != data['confirm_password']:
             raise serializers.ValidationError("Passwords do not match")
 
-        # ✅ use global validator
+        #  use global validator
         StrongPasswordValidator()(password)
 
         return data
@@ -60,7 +59,7 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, data):
         user = authenticate(
-            username=data['email'],  # because USERNAME_FIELD = email
+            username=data['email'],  
             password=data['password']
         )
 
@@ -70,7 +69,7 @@ class LoginSerializer(serializers.Serializer):
         if not user.is_active:
             raise serializers.ValidationError("User is blocked")
 
-        data['user'] = user  # 🔥 attach user object
+        data['user'] = user  #  attach user object
         return data
  
 
@@ -95,11 +94,11 @@ class ResetPasswordSerializer(serializers.Serializer):
     def validate(self, data):
         password = data['new_password']
 
-        # ✅ confirm password check
+        
         if password != data['confirm_password']:
             raise serializers.ValidationError("Passwords do not match")
 
-        # ✅ strong password validation
+        
         StrongPasswordValidator()(password)
 
         return data
@@ -114,7 +113,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         user = self.context['request'].user
         password = data['new_password']
 
-        # ✅ match passwords
+        
         if password != data['confirm_password']:
             raise serializers.ValidationError("Passwords do not match")
         
@@ -129,13 +128,11 @@ class AddressSerializer(serializers.ModelSerializer):
         read_only_fields = ['user']
 
     def validate_phone(self, value):
-        # ✅ Only digits, 10–15 length
         if not re.fullmatch(r'\d{10}', value):
             raise serializers.ValidationError("Enter a valid phone number (10 digits)")
         return value
 
     def validate_pincode(self, value):
-        # ✅ Example: Indian pincode (6 digits)
         if not re.fullmatch(r'\d{6}', value):
             raise serializers.ValidationError("Enter a valid 6-digit pincode")
         return value
@@ -151,7 +148,7 @@ class AddressSerializer(serializers.ModelSerializer):
         return value.title().strip()
 
     def validate(self, data):
-        # ✅ get existing value if not provided in PATCH
+        #  get existing value if not provided in PATCH
         address_line = data.get('address_line') or getattr(self.instance, 'address_line', '')
 
         if len(address_line) < 10:
@@ -187,9 +184,8 @@ class ProfileSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         new_email = validated_data.get('email', instance.email)
 
-        # 🔥 check if email changed
         if instance.email != new_email:
-            instance.is_verified = False  # ❗ reset verification
+            instance.is_verified = False  # reset verification
 
         return super().update(instance, validated_data)
     

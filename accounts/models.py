@@ -4,7 +4,7 @@ from django.core.validators import RegexValidator
 from django.conf import settings
 from django.utils import timezone
 
-#  Custom User Manager
+# Custom User Manager
 class UserManager(BaseUserManager):
     def create_user(self, email, username, password=None, **extra_fields):
         if not email:
@@ -18,7 +18,7 @@ class UserManager(BaseUserManager):
             **extra_fields
         )
 
-        user.set_password(password)  # 🔐 hash password
+        user.set_password(password)  
         user.save(using=self._db)
         return user
 
@@ -37,18 +37,12 @@ class UserManager(BaseUserManager):
 #  Custom User Model
 class User(AbstractUser):
 
-    # ✅ keep username (for display)
     username = models.CharField(max_length=150, unique=True)
-
-    # ✅ use email for login
     email = models.EmailField(unique=True, db_index=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
-
-    # 🔥 attach manager
     objects = UserManager()
-
     phone = models.CharField(
     max_length=15,
     unique=True,
@@ -62,7 +56,6 @@ class User(AbstractUser):
             blank=True
         )
 
-    # 🔹 custom fields
     dob = models.DateField(null=True, blank=True)
 
     role = models.CharField(
@@ -74,7 +67,6 @@ class User(AbstractUser):
         default='user'
     )
 
-    # ✅ use built-in auth control
     is_active = models.BooleanField(default=True)
     temp_email = models.EmailField(null=True, blank=True)
 
@@ -84,7 +76,6 @@ class User(AbstractUser):
     is_gold_member = models.BooleanField(default=False)
     gold_purchased_at = models.DateTimeField(null=True, blank=True)
 
-    # 🔹 timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     def save(self, *args, **kwargs):

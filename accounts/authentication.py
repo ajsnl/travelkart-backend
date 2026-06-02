@@ -24,7 +24,6 @@ class CookieJWTAuthentication(JWTAuthentication):
             return None
 
         check = CSRFCheck(dummy_get_response)
-        # populates request.META['CSRF_COOKIE'], which is used in process_view()
         check.process_request(request)
         reason = check.process_view(request, None, (), {})
         if reason:
@@ -33,4 +32,4 @@ class CookieJWTAuthentication(JWTAuthentication):
 
 class CookieJWTAuthenticationWithoutCSRF(CookieJWTAuthentication):
     def enforce_csrf(self, request):
-        return  # Bypass CSRF check for safe/logout actions
+        return  # Bypass CSRF check for logout actions

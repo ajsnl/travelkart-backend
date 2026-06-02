@@ -17,7 +17,7 @@ def create_otp(user, purpose):
         user=user,
         otp_code=otp,
         purpose=purpose,
-        expires_at=timezone.now() + timedelta(minutes=5)
+        expires_at=timezone.now() + timedelta(minutes=1)
     )
 
 
@@ -41,10 +41,10 @@ from django.contrib.auth.password_validation import validate_password
 
 class StrongPasswordValidator:
     def __call__(self, password, user=None):
-        # ✅ Django built-in validation
+        #  Django built-in validation
         validate_password(password, user)
 
-        # ✅ Custom rules
+        #  Custom rules
         if not re.search(r'[A-Z]', password):
             raise serializers.ValidationError("Password must contain at least 1 uppercase letter")
 

@@ -21,6 +21,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from .authentication import CookieJWTAuthentication, CookieJWTAuthenticationWithoutCSRF
 
 
+
 class RegisterView(mixins.CreateModelMixin, generics.GenericAPIView):
     authentication_classes = []
     permission_classes = []
@@ -55,7 +56,7 @@ class LoginView(APIView):
             "message": "Login successful"
         }, status=status.HTTP_200_OK)
 
-        # ✅ SET ACCESS TOKEN COOKIE
+        #  SET ACCESS TOKEN COOKIE
         response.set_cookie(
             key="access_token",
             value=access_token,
@@ -65,7 +66,7 @@ class LoginView(APIView):
             path="/",
         )
 
-        # ✅ SET REFRESH TOKEN COOKIE
+        #  SET REFRESH TOKEN COOKIE
         response.set_cookie(
             key="refresh_token",
             value=refresh_token,
@@ -92,30 +93,30 @@ class RefreshView(APIView):
         try:
             refresh = RefreshToken(refresh_token)
 
-            # 🔥 NEW TOKENS
+            #  NEW TOKENS
             new_access = str(refresh.access_token)
-            new_refresh = str(refresh)  # optional but recommended
+            new_refresh = str(refresh)  
 
             response = Response({"message": "Token refreshed"})
 
-            # ✅ set access token
+            #  set access token
             response.set_cookie(
                 key="access_token",
                 value=new_access,
                 httponly=True,
                 secure=False,
                 samesite="Lax",
-                path="/",   # 🔥 IMPORTANT
+                path="/",   
             )
 
-            # ✅ ALSO RESET REFRESH TOKEN
+            # RESET REFRESH TOKEN
             response.set_cookie(
                 key="refresh_token",
                 value=new_refresh,
                 httponly=True,
                 secure=False,
                 samesite="Lax",
-                path="/",   # 🔥 IMPORTANT
+                path="/",   
             )
 
             return response
@@ -131,26 +132,24 @@ class ProfileView(mixins.RetrieveModelMixin,
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        return self.request.user  # 🔥 logged-in user
+        return self.request.user  
 
-    # ✅ GET → fetch profile
+    #  fetch profile
     def get(self, request, *args, **kwargs):
         return self.retrieve(request, *args, **kwargs)
 
-    # ✅ PUT → full update
+    # full update
     def put(self, request, *args, **kwargs):
         return self.update(request, *args, **kwargs)
 
-    # ✅ PATCH → partial update
+    # partial update
     def patch(self, request, *args, **kwargs):
         return self.partial_update(request, *args, **kwargs)    
     
 
 
-
-
 class UserMeView(APIView):
-    authentication_classes = [CookieJWTAuthentication]  # 🔥 ADD THIS
+    authentication_classes = [CookieJWTAuthentication] 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -167,11 +166,7 @@ class UserMeView(APIView):
         })
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.tokens import RefreshToken
+
 
 class LogoutView(APIView):
     authentication_classes = [CookieJWTAuthenticationWithoutCSRF]
@@ -180,20 +175,18 @@ class LogoutView(APIView):
     def post(self, request):
         refresh_token = request.COOKIES.get("refresh_token")
 
-        # 🔥 Try to blacklist token (but don't break logout)
         if refresh_token:
             try:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
             except Exception:
-                pass  # ignore errors (token expired/invalid)
+                pass  # (token expired/invalid)
 
         response = Response(
             {"message": "Logged out successfully"},
             status=status.HTTP_200_OK
         )
 
-        # 🔥 IMPORTANT: match cookie settings used during login
         response.delete_cookie(
             "access_token",
             path="/",
@@ -216,12 +209,10 @@ class GoogleLogin(SocialLoginView):
     permission_classes = [AllowAny]
 
     def get_response(self):
-        # Mark user as verified if they log in via Google
         if not self.user.is_verified:
             self.user.is_verified = True
             self.user.save()
 
-        # Generate JWT tokens for the authenticated user
         refresh = RefreshToken.for_user(self.user)
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
@@ -234,12 +225,11 @@ class GoogleLogin(SocialLoginView):
             }
         }, status=status.HTTP_200_OK)
 
-        # Set HttpOnly cookies matching LoginView settings
         response.set_cookie(
             key="access_token",
             value=access_token,
             httponly=True,
-            secure=False,      # True in production (HTTPS)
+            secure=False,      
             samesite="Lax",
             path="/",
         )
@@ -262,27 +252,24 @@ class SendEmailOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
         user = request.user
         email = request.data.get('email')
 
-        # 🧠 HANDLE BOTH CASES
 
-        # ✅ CASE 1: Email update
+        #  CASE 1: Email update
         if email:
-            # 🚫 check duplicate
             if User.objects.filter(email=email).exists():
                 return Response({"error": "Email already in use"}, status=400)
 
             user.temp_email = email
             user.is_verified = False
 
-        # ✅ CASE 2: Signup verification (no email passed)
+        # CASE 2: Signup verification 
         else:
             if not user.email:
                 return Response({"error": "No email found"}, status=400)
 
-            user.temp_email = user.email  # 🔥 important
+            user.temp_email = user.email  
 
         user.save()
 
-        # 🔐 create OTP
         otp_obj = create_otp(user, 'email_verify')
         send_otp_email(user.temp_email, otp_obj.otp_code)
 
@@ -302,7 +289,6 @@ class VerifyEmailOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
         if not otp_code:
             return Response({"error": "OTP is required"}, status=400)
 
-        # 🔍 get latest valid OTP
         otp = OTP.objects.filter(
             user=user,
             otp_code=otp_code,
@@ -313,23 +299,20 @@ class VerifyEmailOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
         if not otp:
             return Response({"error": "Invalid OTP"}, status=400)
 
-        # ⏱️ check expiry
         if otp.expires_at < timezone.now():
             return Response({"error": "OTP expired"}, status=400)
 
-        # 🚨 CRITICAL FIX
         if not user.temp_email:
             return Response({"error": "No email to verify"}, status=400)
 
-        # 🚫 prevent duplicate emails
         if User.objects.filter(email=user.temp_email).exclude(id=user.id).exists():
             return Response({"error": "Email already in use"}, status=400)
 
-        # ✅ mark OTP used
+        # mark OTP used
         otp.is_used = True
         otp.save()
 
-        # ✅ update email safely
+        #  update email safely
         user.email = user.temp_email
         user.temp_email = None
         user.is_verified = True
@@ -359,7 +342,7 @@ class ForgotPasswordView(generics.GenericAPIView):
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
 
-        # 🔥 1. Cooldown check (60 sec)
+        #  Cooldown check (60 sec)
         last_otp = OTP.objects.filter(
             user=user,
             purpose="password_reset"
@@ -371,14 +354,14 @@ class ForgotPasswordView(generics.GenericAPIView):
                 status=429
             )
 
-        # 🔥 2. Invalidate old OTPs
+        # Invalidate old OTPs
         OTP.objects.filter(
             user=user,
             purpose="password_reset",
             is_used=False
         ).update(is_used=True)
 
-        # 🔥 3. Create new OTP
+        #  Create new OTP
         otp_obj = create_otp(user, "password_reset")
 
         send_otp_email(user.email, otp_obj.otp_code)
@@ -402,13 +385,13 @@ class ForgotPasswordVerifyOTPView(generics.GenericAPIView):
         otp_code = serializer.validated_data['otp']
 
 
-        # 🔥 2. Get user
+        
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             return Response({"error": "Invalid credentials"}, status=400)
 
-        # 🔥 3. Get latest OTP
+        
         otp = OTP.objects.filter(
             user=user,
             otp_code=otp_code,
@@ -419,15 +402,15 @@ class ForgotPasswordVerifyOTPView(generics.GenericAPIView):
         if not otp:
             return Response({"error": "Invalid OTP"}, status=400)
 
-        # 🔥 4. Check expiry
+        
         if otp.is_expired():
             return Response({"error": "OTP expired"}, status=400)
 
-        # 🔥 5. Mark OTP used
+        
         otp.is_used = True
         otp.save()
 
-        # 🔥 6. Allow password reset
+        
         user.reset_otp_verified = True
         user.save()
 
@@ -446,13 +429,13 @@ class ResendOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
     def post(self, request):
         user = request.user
 
-        # 🔍 get last OTP
+        
         last_otp = OTP.objects.filter(
             user=user,
             purpose='email_verify'
         ).order_by('-created_at').first()
 
-        # ⏱️ cooldown check (60 sec)
+        
         if last_otp:
             diff = timezone.now() - last_otp.created_at
 
@@ -463,14 +446,14 @@ class ResendOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
                     status=400
                 )
 
-        # ❌ invalidate old OTPs
+        
         OTP.objects.filter(
             user=user,
             purpose='email_verify',
             is_used=False
         ).update(is_used=True)
 
-        # 🔐 create new OTP
+        
         otp_obj = create_otp(user, 'email_verify')
 
         send_otp_email(user.temp_email, otp_obj.otp_code)
@@ -501,18 +484,18 @@ class ResetPasswordView(generics.GenericAPIView):
         if not user.reset_otp_verified:
             return Response({"error": "OTP not verified"}, status=403)
 
-        # 🔐 Set new password
+        
         user.set_password(new_password)
         user.reset_otp_verified = False
         user.save()
 
-        # 🔥 Invalidate all OTPs
+        
         OTP.objects.filter(
             user=user,
             purpose="password_reset"
         ).update(is_used=True)
 
-        # 🚨🔥 BLACKLIST ALL REFRESH TOKENS (CORRECT WAY)
+        #  BLACKLIST ALL REFRESH TOKENS 
         tokens = OutstandingToken.objects.filter(user=user)
         for token in tokens:
             BlacklistedToken.objects.get_or_create(token=token)
@@ -537,18 +520,18 @@ class ChangePasswordView(generics.GenericAPIView):
         old_password = serializer.validated_data['old_password']
         new_password = serializer.validated_data['new_password']
 
-        # ❌ wrong old password
+        
         if not user.check_password(old_password):
             return Response(
                 {"error": "Old password is incorrect"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 🔐 Set new password
+    
         user.set_password(new_password)
         user.save()
 
-        # 🚨🔥 BLACKLIST ALL TOKENS (FORCE LOGOUT EVERYWHERE)
+        #  BLACKLIST ALL TOKENS 
         tokens = OutstandingToken.objects.filter(user=user)
         for token in tokens:
             BlacklistedToken.objects.get_or_create(token=token)
@@ -568,11 +551,11 @@ class AddressViewSet(viewsets.ModelViewSet):
         return Address.objects.filter(user=self.request.user)
     def perform_create(self, serializer):
         user = self.request.user
-    # ✅ if first address → make default automatically
+    # if first address → make default automatically
         if not Address.objects.filter(user=user).exists():
             serializer.save(user=user, is_default=True)
             return
-    # ✅ if user sets default
+    #  if user sets default
         if serializer.validated_data.get('is_default'):
             Address.objects.filter(user=user, is_default=True).update(is_default=False)
         serializer.save(user=user)
@@ -625,7 +608,7 @@ class UploadProfilePicture(APIView):
         user = request.user
         serializer = ProfilePictureUploadSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
-            # If the user already had a profile picture, delete the old file from storage first.
+            
             if user.profile_picture:
                 try:
                     user.profile_picture.delete(save=False)
