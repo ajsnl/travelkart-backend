@@ -11,15 +11,18 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.core.files.storage import default_storage
+from admin_panel.permissions import IsAdminUserRole
 
 # Create your views here.
 
 class CategoryPagination(PageNumberPagination):
     page_size = 5
 
-class CategoryViewSet(viewsets.ModelViewSet):
+
+class AdminCategoryViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdminUserRole]
     queryset = Category.objects.filter(is_deleted=False).order_by('-created_at')
-    serializer_class=CategorySerializer
+    serializer_class = CategorySerializer
 
     filter_backends = [SearchFilter]
     search_fields = ['name']
@@ -33,12 +36,23 @@ class CategoryViewSet(viewsets.ModelViewSet):
         return Response({"message": "Category soft deleted"}, status=status.HTTP_200_OK)
 
 
+class UserCategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    # Only show active and non-deleted categories to users
+    queryset = Category.objects.filter(is_deleted=False, is_active=True).order_by('-created_at')
+    serializer_class = CategorySerializer
+
+    filter_backends = [SearchFilter]
+    search_fields = ['name']
+
+    pagination_class = CategoryPagination
+
+
 class ProductPagination(PageNumberPagination):
     page_size = 10
 
 
-class ProductViewSet(viewsets.ModelViewSet):
-    # Optimize query with select_related and prefetch_related to prevent N+1 queries
+class AdminProductViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdminUserRole]
     queryset = Product.objects.all().select_related('category').prefetch_related('variants__images', 'images').order_by('-created_at')
     serializer_class = ProductSerializer
     pagination_class = ProductPagination
@@ -63,11 +77,6 @@ class ProductViewSet(viewsets.ModelViewSet):
             is_featured_bool = is_featured.lower() in ['true', '1']
             queryset = queryset.filter(is_featured=is_featured_bool)
 
-        user = self.request.user
-        is_admin = user and user.is_authenticated and getattr(user, 'role', 'user') == 'admin'
-        if not is_admin:
-            queryset = queryset.filter(is_active=True)
-
         return queryset
 
     @action(detail=False, methods=['get'])
@@ -76,7 +85,38 @@ class ProductViewSet(viewsets.ModelViewSet):
         return Response(list(brands))
 
 
+class UserProductViewSet(viewsets.ReadOnlyModelViewSet):
+    # Users only see active products
+    queryset = Product.objects.filter(is_active=True).select_related('category').prefetch_related('variants__images', 'images').order_by('-created_at')
+    serializer_class = ProductSerializer
+    pagination_class = ProductPagination
+    filter_backends = [SearchFilter]
+    search_fields = ['name', 'brand', 'variants__sku']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        category = self.request.query_params.get('category')
+        brand = self.request.query_params.get('brand')
+        is_featured = self.request.query_params.get('is_featured')
+
+        if category:
+            queryset = queryset.filter(category_id=category)
+        if brand:
+            queryset = queryset.filter(brand__iexact=brand)
+        if is_featured is not None:
+            is_featured_bool = is_featured.lower() in ['true', '1']
+            queryset = queryset.filter(is_featured=is_featured_bool)
+
+        return queryset
+
+    @action(detail=False, methods=['get'])
+    def brands(self, request):
+        brands = Product.objects.filter(is_active=True).exclude(brand__isnull=True).exclude(brand="").values_list('brand', flat=True).distinct().order_by('brand')
+        return Response(list(brands))
+
+
 class UploadProductMediaView(APIView):
+    permission_classes = [IsAdminUserRole]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
