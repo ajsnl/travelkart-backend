@@ -45,6 +45,9 @@ class Product(models.Model):
     avg_rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)
     total_ratings_count = models.IntegerField(default=0)
     
+    # Sales
+    total_sales = models.IntegerField(default=0)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -61,6 +64,18 @@ class ProductVariant(models.Model):
     # Variant attributes (e.g. {"color": "Charcoal", "capacity": "20L", "size": "S"})
     attributes = models.JSONField(default=dict)
     is_active = models.BooleanField(default=False)
+    
+    # Variant level offers
+    offer_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('none', 'No Offer'),
+            ('percentage', 'Percentage Discount'),
+            ('flat', 'Flat Discount')
+        ],
+        default='none'
+    )
+    offer_value = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

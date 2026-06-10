@@ -2,7 +2,12 @@ from rest_framework.decorators import action
 from django.shortcuts import render
 from rest_framework import viewsets
 from .models import Category, Product
-from .serializers import CategorySerializer, ProductSerializer
+from .serializers import (
+    CategorySerializer,
+    ProductListSerializer,
+    ProductDetailSerializer,
+    ProductWriteSerializer
+)
 from rest_framework.filters import SearchFilter
 from rest_framework.pagination import PageNumberPagination
 from django.conf import settings 
@@ -17,6 +22,8 @@ from admin_panel.permissions import IsAdminUserRole
 
 class CategoryPagination(PageNumberPagination):
     page_size = 5
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class AdminCategoryViewSet(viewsets.ModelViewSet):
@@ -49,15 +56,22 @@ class UserCategoryViewSet(viewsets.ReadOnlyModelViewSet):
 
 class ProductPagination(PageNumberPagination):
     page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class AdminProductViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminUserRole]
-    queryset = Product.objects.all().select_related('category').prefetch_related('variants__images', 'images').order_by('-created_at')
-    serializer_class = ProductSerializer
+    queryset = Product.objects.all().select_related('category__parent').prefetch_related('variants__images', 'images').order_by('-created_at')
+    serializer_class = ProductDetailSerializer
     pagination_class = ProductPagination
     filter_backends = [SearchFilter]
     search_fields = ['name', 'brand', 'variants__sku']
+
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            return ProductWriteSerializer
+        return ProductDetailSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -67,7 +81,13 @@ class AdminProductViewSet(viewsets.ModelViewSet):
         is_featured = self.request.query_params.get('is_featured')
 
         if category:
-            queryset = queryset.filter(category_id=category)
+            from django.db.models import Q
+            subcategories = Category.objects.filter(parent_id=category, is_deleted=False)
+            subcategory_ids = list(subcategories.values_list('id', flat=True))
+            if subcategory_ids:
+                queryset = queryset.filter(Q(category_id=category) | Q(category_id__in=subcategory_ids))
+            else:
+                queryset = queryset.filter(category_id=category)
         if brand:
             queryset = queryset.filter(brand__iexact=brand)
         if is_active is not None:
@@ -86,26 +106,69 @@ class AdminProductViewSet(viewsets.ModelViewSet):
 
 
 class UserProductViewSet(viewsets.ReadOnlyModelViewSet):
-    # Users only see active products
-    queryset = Product.objects.filter(is_active=True).select_related('category').prefetch_related('variants__images', 'images').order_by('-created_at')
-    serializer_class = ProductSerializer
+    # Default to all products (filtered dynamically in get_queryset for list vs retrieve)
+    queryset = Product.objects.all().select_related('category__parent').prefetch_related('variants__images', 'images').order_by('-created_at')
+    serializer_class = ProductDetailSerializer
     pagination_class = ProductPagination
     filter_backends = [SearchFilter]
     search_fields = ['name', 'brand', 'variants__sku']
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        
+        # 1. Apply visibility checks based on action
+        if self.action == 'list':
+            queryset = queryset.filter(is_active=True)
+            # Only show products in active and non-deleted categories
+            queryset = queryset.filter(category__is_active=True, category__is_deleted=False)
+            # Exclude products whose parent category is inactive or deleted
+            queryset = queryset.exclude(category__parent__is_active=False).exclude(category__parent__is_deleted=True)
+        elif self.action == 'retrieve':
+            # Allow viewing but ensure category itself is not deleted
+            queryset = queryset.filter(category__is_deleted=False).exclude(category__parent__is_deleted=True)
+
         category = self.request.query_params.get('category')
         brand = self.request.query_params.get('brand')
         is_featured = self.request.query_params.get('is_featured')
 
         if category:
-            queryset = queryset.filter(category_id=category)
+            from django.db.models import Q
+            subcategories = Category.objects.filter(parent_id=category, is_active=True, is_deleted=False)
+            subcategory_ids = list(subcategories.values_list('id', flat=True))
+            if subcategory_ids:
+                queryset = queryset.filter(Q(category_id=category) | Q(category_id__in=subcategory_ids))
+            else:
+                queryset = queryset.filter(category_id=category)
         if brand:
             queryset = queryset.filter(brand__iexact=brand)
         if is_featured is not None:
             is_featured_bool = is_featured.lower() in ['true', '1']
             queryset = queryset.filter(is_featured=is_featured_bool)
+
+        # Price range filter
+        min_price = self.request.query_params.get('min_price')
+        max_price = self.request.query_params.get('max_price')
+        if min_price or max_price:
+            from django.db.models import Q
+            price_query = Q(variants__is_active=True)
+            if min_price:
+                price_query &= Q(variants__price__gte=min_price)
+            if max_price:
+                price_query &= Q(variants__price__lte=max_price)
+            queryset = queryset.filter(price_query).distinct()
+
+        # Sorting
+        ordering = self.request.query_params.get('ordering')
+        if ordering:
+            from django.db.models import Min, Q
+            if ordering == 'price_asc':
+                queryset = queryset.annotate(min_active_price=Min('variants__price', filter=Q(variants__is_active=True))).order_by('min_active_price')
+            elif ordering == 'price_desc':
+                queryset = queryset.annotate(min_active_price=Min('variants__price', filter=Q(variants__is_active=True))).order_by('-min_active_price')
+            elif ordering == 'name_asc':
+                queryset = queryset.order_by('name')
+            elif ordering == 'name_desc':
+                queryset = queryset.order_by('-name')
 
         return queryset
 

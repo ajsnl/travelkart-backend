@@ -16,10 +16,20 @@ class ProductImageSerializer(serializers.ModelSerializer):
 class ProductVariantSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, required=False)
     sku = serializers.CharField(validators=[])
+    original_price = serializers.ReadOnlyField(source='price')
+    offer_price = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductVariant
-        fields = ['id', 'sku', 'price', 'stock', 'attributes', 'images', 'is_active']
+        fields = ['id', 'sku', 'price', 'stock', 'attributes', 'images', 'is_active', 'original_price', 'offer_price', 'offer_type', 'offer_value']
+
+    def get_offer_price(self, obj):
+        if obj.offer_type == 'percentage' and obj.offer_value > 0:
+            discount = obj.price * (obj.offer_value / 100)
+            return max(0, obj.price - discount)
+        elif obj.offer_type == 'flat' and obj.offer_value > 0:
+            return max(0, obj.price - obj.offer_value)
+        return None
 
     def validate(self, attrs):
         is_active = attrs.get('is_active', self.instance.is_active if self.instance else False)
@@ -42,6 +52,8 @@ class ProductSerializer(serializers.ModelSerializer):
     variants = ProductVariantSerializer(many=True, required=False)
     images = ProductImageSerializer(many=True, required=False) # General product media
     category_name = serializers.ReadOnlyField(source='category.name')
+    is_best_seller = serializers.SerializerMethodField()
+    category_active = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -50,8 +62,25 @@ class ProductSerializer(serializers.ModelSerializer):
             'category', 'category_name', 'brand', 'is_active', 'is_featured',
             'free_delivery', 'est_delivery_time', 'attributes',
             'avg_rating', 'total_ratings_count', 'variants', 'images',
+            'total_sales', 'is_best_seller', 'category_active',
             'created_at', 'updated_at'
         ]
+
+    def get_category_active(self, obj):
+        if not obj.category or not obj.category.is_active or obj.category.is_deleted:
+            return False
+        if obj.category.parent and (not obj.category.parent.is_active or obj.category.parent.is_deleted):
+            return False
+        return True
+
+    def get_is_best_seller(self, obj):
+        from django.db.models import Max
+        if not obj.category_id:
+            return False
+        max_sales = Product.objects.filter(category_id=obj.category_id, is_active=True).aggregate(Max('total_sales'))['total_sales__max']
+        if max_sales and max_sales > 0:
+            return obj.total_sales == max_sales
+        return False
 
     def create(self, validated_data):
         variants_data = validated_data.pop('variants', [])
@@ -164,8 +193,7 @@ class ProductSerializer(serializers.ModelSerializer):
             if getattr(request.user, 'role', 'user') == 'admin':
                 is_admin = True
                 
-        if not is_admin:
-            rep['variants'] = [v for v in rep.get('variants', []) if v.get('is_active', True)]
-            
+        # Send all variants to client so they can see all combinations (like Flipkart/Amazon)
+        # and see out-of-stock or unavailable states when selected
         return rep
 
