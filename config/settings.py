@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'cloudinary_storage',
 
     'products',
+    'wishlist',
     
 ]
 SITE_ID = 1

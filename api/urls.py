@@ -9,4 +9,7 @@ urlpatterns = [
     # Admin routes
     path('admin/', include('admin_panel.urls')),
     path('admin/', include('products.admin_urls')),
+
+    #wishlist routes
+    path('wishlist/', include('wishlist.urls'))
 ]
