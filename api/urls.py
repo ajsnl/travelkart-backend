@@ -11,5 +11,8 @@ urlpatterns = [
     path('admin/', include('products.admin_urls')),
 
     #wishlist routes
-    path('wishlist/', include('wishlist.urls'))
+    path('wishlist/', include('wishlist.urls')),
+
+    #cart routes
+    path('cart/', include('cart.urls'))
 ]

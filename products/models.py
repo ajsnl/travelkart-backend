@@ -36,12 +36,12 @@ class Product(models.Model):
     is_active = models.BooleanField(default=False)
     is_featured = models.BooleanField(default=False)
     free_delivery = models.BooleanField(default=False)
-    est_delivery_time = models.CharField(max_length=100, blank=True) # e.g. "3 Business Days"
+    est_delivery_time = models.CharField(max_length=100, blank=True) 
     
     # Global attributes (e.g. {"material": "polycarbonate", "warranty": "2 years"})
     attributes = models.JSONField(default=dict, blank=True)
     
-    # Ratings (Denormalized)
+    # Ratings 
     avg_rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)
     total_ratings_count = models.IntegerField(default=0)
     
@@ -59,7 +59,7 @@ class ProductVariant(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
     sku = models.CharField(max_length=100, unique=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    stock = models.IntegerField(default=0)
+    stock = models.PositiveIntegerField(default=0)
     
     # Variant attributes (e.g. {"color": "Charcoal", "capacity": "20L", "size": "S"})
     attributes = models.JSONField(default=dict)

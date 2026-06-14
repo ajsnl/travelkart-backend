@@ -4,4 +4,13 @@ from products.models import Category
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = '__all__'
+        fields = [
+            'id',
+            'name',
+            'slug',
+            'description',
+            'parent',
+            'is_active',
+            'created_at'
+        ]
+        read_only_fields = ['id']

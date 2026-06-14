@@ -21,13 +21,16 @@ class ProductListSerializer(serializers.ModelSerializer):
         ]
 
     def get_primary_image(self, obj):
-        # Retrieve first primary image or fallback to first image
-        # Using list() takes advantage of Django's prefetch cache if loaded
-        images = list(obj.images.all())
-        primary = next((img for img in images if img.is_primary and img.variant_id is None), None)
-        if not primary:
-            primary = next((img for img in images if img.variant_id is None), None)
-        return primary.image_url if primary else None
+            # Retrieve first primary image or fallback to first image
+            # Using list() takes advantage of Django's prefetch cache if loaded
+            images = list(obj.images.all())
+            product_images = [img for img in images if img.variant_id is None]
+            
+            primary = next((img for img in product_images if img.is_primary), None)
+            if not primary:
+                primary = product_images[0] if product_images else None
+                
+            return primary.image_url if primary else None
 
     def get_min_price(self, obj):
         variants = list(obj.variants.all())
@@ -36,7 +39,6 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 
 class ProductDetailSerializer(serializers.ModelSerializer):
-    """Detailed read representation serializer."""
     variants = ProductVariantSerializer(many=True, read_only=True)
     images = ProductImageSerializer(many=True, read_only=True)
     category_name = serializers.ReadOnlyField(source='category.name')
@@ -95,7 +97,7 @@ class ProductWriteSerializer(serializers.ModelSerializer):
             'id', 'name', 'slug', 'short_description', 'description',
             'category', 'brand', 'is_active', 'is_featured',
             'free_delivery', 'est_delivery_time', 'attributes',
-            'variants', 'images'
+            'variants', 'images','total_sales'
         ]
 
     def create(self, validated_data):

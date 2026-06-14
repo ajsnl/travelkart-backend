@@ -7,12 +7,14 @@ class ProductVariantSerializer(serializers.ModelSerializer):
     sku = serializers.CharField(validators=[])
     original_price = serializers.ReadOnlyField(source='price')
     offer_price = serializers.SerializerMethodField()
+    available_stock = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductVariant
         fields = [
             'id', 'sku', 'price', 'stock', 'attributes', 'images', 
-            'is_active', 'original_price', 'offer_price', 'offer_type', 'offer_value'
+            'is_active', 'original_price', 'offer_price', 'offer_type', 'offer_value',
+            'available_stock'
         ]
 
     def get_offer_price(self, obj):
@@ -38,3 +40,17 @@ class ProductVariantSerializer(serializers.ModelSerializer):
             })
             
         return attrs
+
+    def get_available_stock(self, obj):
+        request = self.context.get('request')
+        user = request.user if request else None
+        
+        from cart.models import CartItem
+        from django.db.models import Sum
+        
+        query = CartItem.objects.filter(variant=obj)
+        if user and user.is_authenticated:
+            query = query.exclude(cart__user=user)
+            
+        reserved = query.aggregate(total=Sum('quantity'))['total'] or 0
+        return max(0, obj.stock - reserved)

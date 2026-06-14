@@ -1,25 +1,28 @@
 from django.shortcuts import render
-
-# Create your views here.
-from rest_framework import generics, mixins,viewsets
-from .models import User,OTP,Address
-from django.utils import timezone
-from django.contrib.auth import get_user_model
-from datetime import timedelta
-from .serializers import RegisterSerializer,LoginSerializer,ProfileSerializer,SendEmailOTPSerializer,VerifyEmailOTPSerializer,VerifyForgotPasswordOTPSerializer,ResetPasswordSerializer
-from .serializers import ChangePasswordSerializer,AddressSerializer,ProfilePictureUploadSerializer
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import generics, mixins, viewsets, status
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from .serializers import LoginSerializer
-from rest_framework import status
 from rest_framework.views import APIView
-from .utils import create_otp,send_otp_email
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
-from .authentication import CookieJWTAuthentication, CookieJWTAuthenticationWithoutCSRF
+from django.contrib.auth import get_user_model
 
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from dj_rest_auth.registration.views import SocialLoginView
+
+from .models import User, OTP, Address
+from .serializers import (
+    RegisterSerializer, LoginSerializer, ProfileSerializer,
+    SendEmailOTPSerializer, VerifyEmailOTPSerializer,
+    VerifyForgotPasswordOTPSerializer, ResetPasswordSerializer,
+    ChangePasswordSerializer, AddressSerializer, ProfilePictureUploadSerializer
+)
+from .authentication import CookieJWTAuthentication, CookieJWTAuthenticationWithoutCSRF
+from .services import AuthService, OtpService, PasswordService, AddressService, ProfileService
+
+User = get_user_model()
 
 
 class RegisterView(mixins.CreateModelMixin, generics.GenericAPIView):
@@ -30,13 +33,12 @@ class RegisterView(mixins.CreateModelMixin, generics.GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         return self.create(request, *args, **kwargs)
-    
-
 
 
 @ensure_csrf_cookie
 def get_csrf_token(request):
     return JsonResponse({"message": "CSRF cookie set"})
+
 
 class LoginView(APIView):
     authentication_classes = []
@@ -47,37 +49,18 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data["user"]
-
-        refresh = RefreshToken.for_user(user)
-        access_token = str(refresh.access_token)
-        refresh_token = str(refresh)
+        tokens = AuthService.create_auth_tokens(user)
 
         response = Response({
             "message": "Login successful"
         }, status=status.HTTP_200_OK)
 
-        #  SET ACCESS TOKEN COOKIE
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=False,      # True in production (HTTPS)
-            samesite="Lax",
-            path="/",
+        AuthService.set_auth_cookies(
+            response,
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"]
         )
-
-        #  SET REFRESH TOKEN COOKIE
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=False,
-            samesite="Lax",
-            path="/",
-        )
-
         return response
-    
 
 
 class RefreshView(APIView):
@@ -86,70 +69,39 @@ class RefreshView(APIView):
 
     def post(self, request):
         refresh_token = request.COOKIES.get("refresh_token")
-
         if not refresh_token:
-            return Response({"error": "No refresh token"}, status=401)
+            return Response({"error": "No refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            refresh = RefreshToken(refresh_token)
-
-            #  NEW TOKENS
-            new_access = str(refresh.access_token)
-            new_refresh = str(refresh)  
-
+            new_access, new_refresh = AuthService.refresh_tokens(refresh_token)
             response = Response({"message": "Token refreshed"})
-
-            #  set access token
-            response.set_cookie(
-                key="access_token",
-                value=new_access,
-                httponly=True,
-                secure=False,
-                samesite="Lax",
-                path="/",   
-            )
-
-            # RESET REFRESH TOKEN
-            response.set_cookie(
-                key="refresh_token",
-                value=new_refresh,
-                httponly=True,
-                secure=False,
-                samesite="Lax",
-                path="/",   
-            )
-
+            AuthService.set_auth_cookies(response, new_access, new_refresh)
             return response
-
         except Exception:
-            return Response({"error": "Invalid refresh token"}, status=401)
+            return Response({"error": "Invalid refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
+
 
 class ProfileView(mixins.RetrieveModelMixin,
                   mixins.UpdateModelMixin,
                   generics.GenericAPIView):
-
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        return self.request.user  
+        return self.request.user
 
-    #  fetch profile
     def get(self, request, *args, **kwargs):
         return self.retrieve(request, *args, **kwargs)
 
-    # full update
     def put(self, request, *args, **kwargs):
         return self.update(request, *args, **kwargs)
 
-    # partial update
     def patch(self, request, *args, **kwargs):
-        return self.partial_update(request, *args, **kwargs)    
-    
+        return self.partial_update(request, *args, **kwargs)
 
 
 class UserMeView(APIView):
-    authentication_classes = [CookieJWTAuthentication] 
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -159,13 +111,11 @@ class UserMeView(APIView):
             "phone": request.user.phone,
             "is_verified": request.user.is_verified,
             "is_gold_member": request.user.is_gold_member,
-            "DateOfBirth":request.user.dob,
+            "DateOfBirth": request.user.dob,
             "profile_picture": request.user.profile_picture.url if request.user.profile_picture else None,
             "updated_at": request.user.updated_at,
             "role": request.user.role
         })
-
-
 
 
 class LogoutView(APIView):
@@ -174,35 +124,18 @@ class LogoutView(APIView):
 
     def post(self, request):
         refresh_token = request.COOKIES.get("refresh_token")
-
-        if refresh_token:
-            try:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-            except Exception:
-                pass  # (token expired/invalid)
+        try:
+            AuthService.blacklist_token(refresh_token)
+        except Exception:
+            pass  # token expired/invalid
 
         response = Response(
             {"message": "Logged out successfully"},
             status=status.HTTP_200_OK
         )
-
-        response.delete_cookie(
-            "access_token",
-            path="/",
-            samesite="Lax",
-        )
-        response.delete_cookie(
-            "refresh_token",
-            path="/",
-            samesite="Lax",
-        )
-
+        AuthService.delete_auth_cookies(response)
         return response
-    
-from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
-from dj_rest_auth.registration.views import SocialLoginView
-from rest_framework.permissions import AllowAny
+
 
 class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
@@ -213,9 +146,7 @@ class GoogleLogin(SocialLoginView):
             self.user.is_verified = True
             self.user.save()
 
-        refresh = RefreshToken.for_user(self.user)
-        access_token = str(refresh.access_token)
-        refresh_token = str(refresh)
+        tokens = AuthService.create_auth_tokens(self.user)
 
         response = Response({
             "message": "Login successful",
@@ -225,21 +156,10 @@ class GoogleLogin(SocialLoginView):
             }
         }, status=status.HTTP_200_OK)
 
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=False,      
-            samesite="Lax",
-            path="/",
-        )
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=False,
-            samesite="Lax",
-            path="/",
+        AuthService.set_auth_cookies(
+            response,
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"]
         )
         return response
 
@@ -249,33 +169,9 @@ class SendEmailOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        user = request.user
         email = request.data.get('email')
-
-
-        #  CASE 1: Email update
-        if email:
-            if User.objects.filter(email=email).exists():
-                return Response({"error": "Email already in use"}, status=400)
-
-            user.temp_email = email
-            user.is_verified = False
-
-        # CASE 2: Signup verification 
-        else:
-            if not user.email:
-                return Response({"error": "No email found"}, status=400)
-
-            user.temp_email = user.email  
-
-        user.save()
-
-        otp_obj = create_otp(user, 'email_verify')
-        send_otp_email(user.temp_email, otp_obj.otp_code)
-
-        return Response({"message": "OTP sent to email"}, status=200)
-
-
+        result = OtpService.send_email_otp(request.user, email)
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class VerifyEmailOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
@@ -283,45 +179,10 @@ class VerifyEmailOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        user = request.user
         otp_code = request.data.get('otp')
+        result = OtpService.verify_email_otp(request.user, otp_code)
+        return Response(result, status=status.HTTP_200_OK)
 
-        if not otp_code:
-            return Response({"error": "OTP is required"}, status=400)
-
-        otp = OTP.objects.filter(
-            user=user,
-            otp_code=otp_code,
-            purpose='email_verify',
-            is_used=False
-        ).order_by('-created_at').first()
-
-        if not otp:
-            return Response({"error": "Invalid OTP"}, status=400)
-
-        if otp.expires_at < timezone.now():
-            return Response({"error": "OTP expired"}, status=400)
-
-        if not user.temp_email:
-            return Response({"error": "No email to verify"}, status=400)
-
-        if User.objects.filter(email=user.temp_email).exclude(id=user.id).exists():
-            return Response({"error": "Email already in use"}, status=400)
-
-        # mark OTP used
-        otp.is_used = True
-        otp.save()
-
-        #  update email safely
-        user.email = user.temp_email
-        user.temp_email = None
-        user.is_verified = True
-        user.save()
-
-        return Response({"message": "Email verified successfully"}, status=200)
-
-from django.utils import timezone
-from datetime import timedelta
 
 class ForgotPasswordView(generics.GenericAPIView):
     authentication_classes = []
@@ -331,46 +192,11 @@ class ForgotPasswordView(generics.GenericAPIView):
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         email = serializer.validated_data['email']
 
-        if not email:
-            return Response({"error": "Email is required"}, status=400)
+        result = PasswordService.send_forgot_password_otp(email)
+        return Response(result, status=status.HTTP_200_OK)
 
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=404)
-
-        #  Cooldown check (60 sec)
-        last_otp = OTP.objects.filter(
-            user=user,
-            purpose="password_reset"
-        ).order_by('-created_at').first()
-
-        if last_otp and (timezone.now() - last_otp.created_at).seconds < 60:
-            return Response(
-                {"error": "Please wait before requesting another OTP"},
-                status=429
-            )
-
-        # Invalidate old OTPs
-        OTP.objects.filter(
-            user=user,
-            purpose="password_reset",
-            is_used=False
-        ).update(is_used=True)
-
-        #  Create new OTP
-        otp_obj = create_otp(user, "password_reset")
-
-        send_otp_email(user.email, otp_obj.otp_code)
-
-        return Response({"message": "OTP sent successfully"}, status=200)
-    
-
-
-User = get_user_model()
 
 class ForgotPasswordVerifyOTPView(generics.GenericAPIView):
     authentication_classes = []
@@ -380,88 +206,19 @@ class ForgotPasswordVerifyOTPView(generics.GenericAPIView):
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         email = serializer.validated_data['email']
         otp_code = serializer.validated_data['otp']
 
-
-        
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response({"error": "Invalid credentials"}, status=400)
-
-        
-        otp = OTP.objects.filter(
-            user=user,
-            otp_code=otp_code,
-            purpose="password_reset",
-            is_used=False
-        ).order_by('-created_at').first()
-
-        if not otp:
-            return Response({"error": "Invalid OTP"}, status=400)
-
-        
-        if otp.is_expired():
-            return Response({"error": "OTP expired"}, status=400)
-
-        
-        otp.is_used = True
-        otp.save()
-
-        
-        user.reset_otp_verified = True
-        user.save()
-
-        return Response(
-            {"message": "OTP verified successfully"},
-            status=200
-        )
-
-
+        result = PasswordService.verify_forgot_password_otp(email, otp_code)
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class ResendOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
-    
 
     def post(self, request):
-        user = request.user
-
-        
-        last_otp = OTP.objects.filter(
-            user=user,
-            purpose='email_verify'
-        ).order_by('-created_at').first()
-
-        
-        if last_otp:
-            diff = timezone.now() - last_otp.created_at
-
-            if diff < timedelta(seconds=60):
-                remaining = 60 - int(diff.total_seconds())
-                return Response(
-                    {"error": f"Wait {remaining}s before requesting new OTP"},
-                    status=400
-                )
-
-        
-        OTP.objects.filter(
-            user=user,
-            purpose='email_verify',
-            is_used=False
-        ).update(is_used=True)
-
-        
-        otp_obj = create_otp(user, 'email_verify')
-
-        send_otp_email(user.temp_email, otp_obj.otp_code)
-
-        return Response({"message": "OTP resent successfully"}, status=200)
-    
-
-
+        result = OtpService.resend_email_otp(request.user)
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class ResetPasswordView(generics.GenericAPIView):
@@ -472,40 +229,11 @@ class ResetPasswordView(generics.GenericAPIView):
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         email = serializer.validated_data['email']
         new_password = serializer.validated_data['new_password']
 
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response({"error": "Invalid credentials"}, status=400)
-
-        if not user.reset_otp_verified:
-            return Response({"error": "OTP not verified"}, status=403)
-
-        
-        user.set_password(new_password)
-        user.reset_otp_verified = False
-        user.save()
-
-        
-        OTP.objects.filter(
-            user=user,
-            purpose="password_reset"
-        ).update(is_used=True)
-
-        #  BLACKLIST ALL REFRESH TOKENS 
-        tokens = OutstandingToken.objects.filter(user=user)
-        for token in tokens:
-            BlacklistedToken.objects.get_or_create(token=token)
-
-        return Response(
-            {"message": "Password reset successful"},
-            status=200
-        )
-    
-
+        result = PasswordService.reset_password(email, new_password)
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class ChangePasswordView(generics.GenericAPIView):
@@ -515,33 +243,12 @@ class ChangePasswordView(generics.GenericAPIView):
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        user = request.user
         old_password = serializer.validated_data['old_password']
         new_password = serializer.validated_data['new_password']
 
-        
-        if not user.check_password(old_password):
-            return Response(
-                {"error": "Old password is incorrect"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        result = PasswordService.change_password(request.user, old_password, new_password)
+        return Response(result, status=status.HTTP_200_OK)
 
-    
-        user.set_password(new_password)
-        user.save()
-
-        #  BLACKLIST ALL TOKENS 
-        tokens = OutstandingToken.objects.filter(user=user)
-        for token in tokens:
-            BlacklistedToken.objects.get_or_create(token=token)
-
-        return Response(
-            {"message": "Password changed successfully"},
-            status=status.HTTP_200_OK
-        )
-
-from rest_framework.decorators import action
 
 class AddressViewSet(viewsets.ModelViewSet):
     serializer_class = AddressSerializer
@@ -549,55 +256,25 @@ class AddressViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Address.objects.filter(user=self.request.user)
-    def perform_create(self, serializer):
-        user = self.request.user
-    # if first address → make default automatically
-        if not Address.objects.filter(user=user).exists():
-            serializer.save(user=user, is_default=True)
-            return
-    #  if user sets default
-        if serializer.validated_data.get('is_default'):
-            Address.objects.filter(user=user, is_default=True).update(is_default=False)
-        serializer.save(user=user)
-    def perform_update(self, serializer):
-        if serializer.validated_data.get('is_default'):
-            Address.objects.filter(
-                user=self.request.user,
-                is_default=True
-            ).exclude(id=self.get_object().id).update(is_default=False)
 
-        serializer.save()    
+    def perform_create(self, serializer):
+        AddressService.create_address(self.request.user, serializer)
+
+    def perform_update(self, serializer):
+        AddressService.update_address(self.request.user, self.get_object(), serializer)
+
     def destroy(self, request, *args, **kwargs):
         address = self.get_object()
-
-        if address.is_default:
-            return Response(
-                {"error": "Cannot delete default address"},
-                status=400
-            )
-
-        return super().destroy(request, *args, **kwargs)    
-    
-    
-
+        AddressService.delete_address(address)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['patch'])
     def set_default(self, request, pk=None):
         address = self.get_object()
-
-        Address.objects.filter(
-            user=request.user,
-            is_default=True
-        ).update(is_default=False)
-
-        address.is_default = True
-        address.save()
-
+        AddressService.set_default_address(request.user, address)
         return Response({
             "message": "Default address set successfully"
-        })
-
-from rest_framework.parsers import MultiPartParser, FormParser
+        }, status=status.HTTP_200_OK)
 
 
 class UploadProfilePicture(APIView):
@@ -608,15 +285,9 @@ class UploadProfilePicture(APIView):
         user = request.user
         serializer = ProfilePictureUploadSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
-            
-            if user.profile_picture:
-                try:
-                    user.profile_picture.delete(save=False)
-                except Exception as e:
-                    print(f"Error deleting old profile picture: {e}")
-            serializer.save()
+            ProfileService.save_profile_picture(user, serializer)
             return Response({
                 "message": "Profile picture updated",
                 "image_url": user.profile_picture.url
-            })
+            }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
