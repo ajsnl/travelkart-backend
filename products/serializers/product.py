@@ -90,6 +90,7 @@ class ProductWriteSerializer(serializers.ModelSerializer):
     """Write-only serializer containing validation, create, and update logic."""
     variants = ProductVariantSerializer(many=True, required=False)
     images = ProductImageSerializer(many=True, required=False)
+    brand = serializers.CharField(required=True, allow_blank=False, max_length=100, error_messages={"blank": "Brand name is required."})
 
     class Meta:
         model = Product

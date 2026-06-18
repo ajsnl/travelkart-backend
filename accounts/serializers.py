@@ -27,6 +27,12 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Username must be at least 3 characters")
         return value
 
+    def validate_dob(self, value):
+        from datetime import date
+        if value and value > date.today():
+            raise serializers.ValidationError("Date of birth cannot be in the future.")
+        return value
+
     def validate(self, data):
         password = data['password']
 
@@ -188,6 +194,12 @@ class ProfileSerializer(serializers.ModelSerializer):
             instance.is_verified = False  # reset verification
 
         return super().update(instance, validated_data)
+
+    def validate_dob(self, value):
+        from datetime import date
+        if value and value > date.today():
+            raise serializers.ValidationError("Date of birth cannot be in the future.")
+        return value
     
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()

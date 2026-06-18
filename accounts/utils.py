@@ -23,8 +23,17 @@ def create_otp(user, purpose):
 
 
 def send_otp_email(email, otp):
-    subject = "Your OTP Code"
-    message = f"Your OTP is: {otp}. It will expire soon."
+    subject = "TravelKart OTP Verification Code"
+    message = (
+        f"Hello,\n\n"
+        f"Thank you for choosing TravelKart.\n\n"
+        f"Your One-Time Password (OTP) is:\n"
+        f"{otp}\n\n"
+        f"This code is valid for the next 1 minute. Please do not share this code with anyone for security reasons.\n\n"
+        f"If you did not request this code, please ignore this email or contact our support team immediately.\n\n"
+        f"Best regards,\n"
+        f"TravelKart Team"
+    )
 
     send_mail(
         subject,

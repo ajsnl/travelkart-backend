@@ -34,6 +34,8 @@ class AdminCategoryViewSet(viewsets.ModelViewSet):
 
     pagination_class = CategoryPagination
 
+    
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         CategoryService.soft_delete_category(instance)

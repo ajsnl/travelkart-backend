@@ -14,3 +14,11 @@ class CategorySerializer(serializers.ModelSerializer):
             'created_at'
         ]
         read_only_fields = ['id']
+
+    def validate_name(self, value):
+        qs = Category.objects.filter(is_deleted=False, name__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A category with this name already exists (case-insensitive check).")
+        return value
