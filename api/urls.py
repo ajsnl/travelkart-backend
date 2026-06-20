@@ -14,5 +14,8 @@ urlpatterns = [
     path('wishlist/', include('wishlist.urls')),
 
     #cart routes
-    path('cart/', include('cart.urls'))
+    path('cart/', include('cart.urls')),
+
+    #order routes
+    path('orders/',include('orders.urls'))
 ]

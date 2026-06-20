@@ -2,6 +2,8 @@ from rest_framework.exceptions import ValidationError, NotFound
 from .models import Cart, CartItem
 from products.models import ProductVariant
 from wishlist.models import Wishlist
+from decimal import Decimal
+
 
 class CartService:
     @staticmethod
@@ -139,7 +141,7 @@ class CartService:
                 return (price * (item.variant.offer_value / 100)) * item.quantity
             elif item.variant.offer_type == 'flat':
                 return item.variant.offer_value * item.quantity
-        return 0.00
+        return Decimal('0.00')
 
     @classmethod
     def get_cart_totals(cls, cart):
