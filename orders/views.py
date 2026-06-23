@@ -48,7 +48,9 @@ class OrderSimulateStatusView(APIView):
     def post(self, request, tracking_id):
         """Simulate order status progression."""
         status = request.data.get('status')
-        order = OrderService.simulate_order_status(tracking_id, status, request.user)
+        reason = request.data.get('reason')
+        comments = request.data.get('comments')
+        order = OrderService.simulate_order_status(tracking_id, status, request.user, reason, comments)
         serializer = OrderSerializer(order)
         return Response(serializer.data)
 
@@ -57,7 +59,9 @@ class OrderItemCancelView(APIView):
     
     def post(self, request, item_id):
         quantity = request.data.get('quantity')
-        order = OrderService.cancel_order_item(item_id, quantity, request.user)
+        reason = request.data.get('reason')
+        comments = request.data.get('comments')
+        order = OrderService.cancel_order_item(item_id, quantity, reason, comments, request.user)
         serializer = OrderSerializer(order)
         return Response(serializer.data)
 
@@ -66,6 +70,8 @@ class OrderItemReturnView(APIView):
     
     def post(self, request, item_id):
         quantity = request.data.get('quantity')
-        order = OrderService.return_order_item(item_id, quantity, request.user)
+        reason = request.data.get('reason')
+        comments = request.data.get('comments')
+        order = OrderService.return_order_item(item_id, quantity, reason, comments, request.user)
         serializer = OrderSerializer(order)
         return Response(serializer.data)

@@ -101,7 +101,7 @@ class OrderService:
         return order
 
     @staticmethod
-    def simulate_order_status(tracking_id, status, user):
+    def simulate_order_status(tracking_id, status, user, reason=None, comments=None):
         """Simulate advancing/updating order status with lifecycle validations."""
         valid_statuses = [choice[0] for choice in Order.STATUS_CHOICES]
         if not status:
@@ -125,10 +125,26 @@ class OrderService:
                 raise ValidationError({"error": f"Cannot change status of a {order.status} order."})
             if status == 'cancelled' and order.status not in ['processing', 'shipped', 'out_for_delivery', 'cancelled']:
                 raise ValidationError({"error": "Delivered or returned orders cannot be cancelled."})
-            if status == 'returned' and order.status not in ['delivered', 'returned']:
-                raise ValidationError({"error": "Only delivered orders can be returned."})
+            if status == 'returned':
+                raise ValidationError({"error": "Users cannot directly set orders as returned. A return request must be submitted."})
+            if status == 'return_requested':
+                if order.status != 'delivered':
+                    raise ValidationError({"error": "Only delivered orders can be returned."})
+                import django.utils.timezone as tz
+                delta = tz.now() - order.updated_at
+                if delta.days > 10:
+                    raise ValidationError({"error": "Return window has expired. Returns are only allowed within 10 days of delivery."})
                 
         order.status = status
+        
+        # Save reasons if cancelling or returning
+        if status == 'cancelled':
+            order.cancel_reason = reason
+            order.cancel_comments = comments
+        elif status == 'return_requested':
+            order.return_reason = reason
+            order.return_comments = comments
+            
         # If order is delivered, update payment status to paid if payment method is COD
         if status == 'delivered' and order.payment_method == 'COD':
             order.payment_status = 'paid'
@@ -137,7 +153,7 @@ class OrderService:
         return order
 
     @staticmethod
-    def cancel_order_item(item_id, quantity, user):
+    def cancel_order_item(item_id, quantity, reason, comments, user):
         """Cancel a quantity of an individual order item during cancel window."""
         try:
             item = OrderItem.objects.select_related('order').get(id=item_id)
@@ -179,21 +195,33 @@ class OrderService:
             if order.subtotal < 0: order.subtotal = 0
             if order.total_price < 0: order.total_price = 0
             
-            item.quantity -= quantity
-            if item.quantity == 0:
-                item.delete()
-            else:
+            if quantity == item.quantity:
+                item.is_cancelled = True
+                item.cancel_reason = reason
+                item.cancel_comments = comments
                 item.save()
+            else:
+                item.quantity -= quantity
+                item.save()
+                OrderItem.objects.create(
+                    order=order,
+                    variant=item.variant,
+                    quantity=quantity,
+                    price=item.price,
+                    is_cancelled=True,
+                    cancel_reason=reason,
+                    cancel_comments=comments
+                )
                 
-            # Check if order has any remaining items
-            if not order.items.exists():
+            # Check if order has any remaining active items
+            if not order.items.filter(is_cancelled=False).exists():
                 order.status = 'cancelled'
             order.save()
             
         return order
 
     @staticmethod
-    def return_order_item(item_id, quantity, user):
+    def return_order_item(item_id, quantity, reason, comments, user):
         """Return a quantity of an individual order item post-delivery."""
         try:
             item = OrderItem.objects.select_related('order').get(id=item_id)
@@ -235,14 +263,26 @@ class OrderService:
             if order.subtotal < 0: order.subtotal = 0
             if order.total_price < 0: order.total_price = 0
             
-            item.quantity -= quantity
-            if item.quantity == 0:
-                item.delete()
-            else:
+            if quantity == item.quantity:
+                item.is_returned = True
+                item.return_reason = reason
+                item.return_comments = comments
                 item.save()
+            else:
+                item.quantity -= quantity
+                item.save()
+                OrderItem.objects.create(
+                    order=order,
+                    variant=item.variant,
+                    quantity=quantity,
+                    price=item.price,
+                    is_returned=True,
+                    return_reason=reason,
+                    return_comments=comments
+                )
                 
-            # Check if order has any remaining items
-            if not order.items.exists():
+            # Check if order has any remaining active items
+            if not order.items.filter(is_cancelled=False, is_returned=False).exists():
                 order.status = 'returned'
             order.save()
             

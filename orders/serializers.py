@@ -6,7 +6,11 @@ class OrderItemSerializer(serializers.ModelSerializer):
     variant = SimpleVariantSerializer(read_only=True)
     class Meta:
         model = OrderItem
-        fields = ['id', 'variant', 'quantity', 'price']
+        fields = [
+            'id', 'variant', 'quantity', 'price', 
+            'is_cancelled', 'cancel_reason', 'cancel_comments',
+            'is_returned', 'return_reason', 'return_comments'
+        ]
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
@@ -18,5 +22,6 @@ class OrderSerializer(serializers.ModelSerializer):
             'address_line', 'city', 'state', 'pincode', 'country',
             'subtotal', 'shipping_fee', 'discount', 'total_price',
             'payment_method', 'payment_status', 'status', 
-            'delivery_estimate', 'created_at', 'updated_at', 'items'
+            'delivery_estimate', 'created_at', 'updated_at', 'items',
+            'cancel_reason', 'cancel_comments', 'return_reason', 'return_comments'
         ]
