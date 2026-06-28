@@ -274,20 +274,8 @@ class OrderService:
             quantity = item.quantity
             
         with transaction.atomic():
-            # Restore stock
-            if item.variant:
-                item.variant.stock += quantity
-                item.variant.save()
-                
-            # Update price and quantities
-            price_reduction = item.price * quantity
-            order.subtotal -= price_reduction
-            order.total_price -= price_reduction
-            if order.subtotal < 0: order.subtotal = 0
-            if order.total_price < 0: order.total_price = 0
-            
             if quantity == item.quantity:
-                item.is_returned = True
+                item.is_return_requested = True
                 item.return_reason = reason
                 item.return_comments = comments
                 item.save()
@@ -299,20 +287,81 @@ class OrderService:
                     variant=item.variant,
                     quantity=quantity,
                     price=item.price,
-                    is_returned=True,
+                    is_return_requested=True,
                     return_reason=reason,
                     return_comments=comments
                 )
                 
-            if not order.items.filter(is_cancelled=False, is_returned=False).exists():
-                order.status = 'returned'
-                if order.payment_status == 'paid':
-                    order.payment_status = 'refunded'
-            order.save()
-            
             AdminNotification.objects.create(
                 message=f"Order {order.tracking_id}: Return requested for item {item.variant.product.name if item.variant else 'product'}.",
                 tracking_id=order.tracking_id
             )
+            
+        return order
+
+    @staticmethod
+    def approve_item_return(item_id, user):
+        try:
+            item = OrderItem.objects.select_related('order').get(id=item_id)
+        except OrderItem.DoesNotExist:
+            raise NotFound({"error": "Order item not found."})
+            
+        if not item.is_return_requested:
+            raise ValidationError({"error": "This item does not have a pending return request."})
+            
+        order = item.order
+        role = getattr(user, 'role', 'user')
+        is_admin = role == 'admin' or user.is_superuser
+        if not is_admin:
+            raise PermissionDenied({"error": "Only administrators can approve return requests."})
+            
+        with transaction.atomic():
+            # Update item status
+            item.is_returned = True
+            item.is_return_requested = False
+            item.save()
+            
+            # Restore stock
+            if item.variant:
+                item.variant.stock += item.quantity
+                item.variant.save()
+                
+            # Reduce subtotal and total_price
+            price_reduction = item.price * item.quantity
+            order.subtotal -= price_reduction
+            order.total_price -= price_reduction
+            if order.subtotal < 0: order.subtotal = 0
+            if order.total_price < 0: order.total_price = 0
+            
+            # Check if all items in order are returned or cancelled
+            if not order.items.filter(is_cancelled=False, is_returned=False, is_return_requested=False).exists():
+                order.status = 'returned'
+                if order.payment_status == 'paid':
+                    order.payment_status = 'refunded'
+                
+            order.save()
+            
+        return order
+
+    @staticmethod
+    def reject_item_return(item_id, user):
+        try:
+            item = OrderItem.objects.select_related('order').get(id=item_id)
+        except OrderItem.DoesNotExist:
+            raise NotFound({"error": "Order item not found."})
+            
+        if not item.is_return_requested:
+            raise ValidationError({"error": "This item does not have a pending return request."})
+            
+        order = item.order
+        role = getattr(user, 'role', 'user')
+        is_admin = role == 'admin' or user.is_superuser
+        if not is_admin:
+            raise PermissionDenied({"error": "Only administrators can reject return requests."})
+            
+        with transaction.atomic():
+            # Clear return requested flag
+            item.is_return_requested = False
+            item.save()
             
         return order

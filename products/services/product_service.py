@@ -59,6 +59,8 @@ class ProductService:
             queryset = queryset.filter(category__is_active=True, category__is_deleted=False)
             # Exclude products whose parent category is inactive or deleted
             queryset = queryset.exclude(category__parent__is_active=False).exclude(category__parent__is_deleted=True)
+            # Prevent product listing before adding at least one variant (active or inactive)
+            queryset = queryset.filter(variants__isnull=False).distinct()
         elif action == 'retrieve':
             # Allow viewing but ensure category itself is not deleted
             queryset = queryset.filter(category__is_deleted=False).exclude(category__parent__is_deleted=True)

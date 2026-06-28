@@ -9,7 +9,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'variant', 'quantity', 'price', 
             'is_cancelled', 'cancel_reason', 'cancel_comments',
-            'is_returned', 'return_reason', 'return_comments'
+            'is_returned','is_return_requested', 'return_reason', 'return_comments'
         ]
 
 class OrderSerializer(serializers.ModelSerializer):

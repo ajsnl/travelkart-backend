@@ -191,3 +191,21 @@ class AdminNotificationReadAllView(APIView):
     def post(self, request):
         AdminNotification.objects.filter(is_read=False).update(is_read=True)
         return Response({"success": True})
+
+
+class AdminOrderItemApproveReturnView(APIView):
+    permission_classes = [IsAdminUserRole]
+    
+    def post(self, request, item_id):
+        order = OrderService.approve_item_return(item_id, request.user)
+        serializer = OrderSerializer(order)
+        return Response(serializer.data)
+
+
+class AdminOrderItemRejectReturnView(APIView):
+    permission_classes = [IsAdminUserRole]
+    
+    def post(self, request, item_id):
+        order = OrderService.reject_item_return(item_id, request.user)
+        serializer = OrderSerializer(order)
+        return Response(serializer.data)
