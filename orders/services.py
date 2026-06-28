@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from accounts.models import Address
 from cart.services import CartService
 from products.models import ProductVariant
-from .models import Order, OrderItem
+from .models import Order, OrderItem, AdminNotification
 
 class OrderService:
     @staticmethod
@@ -33,9 +33,8 @@ class OrderService:
         subtotal = cart_totals['total_price']
         discount = cart_totals['discount_total']
         
-        # Determine shipping fee: Free for gold members OR if order subtotal > 500
         is_gold = getattr(user, 'is_gold_member', False)
-        if is_gold or subtotal > 500:
+        if is_gold or subtotal > 1000:
             shipping_fee = 0
         else:
             shipping_fee = 99
@@ -46,12 +45,10 @@ class OrderService:
         while Order.objects.filter(tracking_id=tracking_id).exists():
             tracking_id = f"TK-{random.randint(100000, 999999)}"
             
-        # Compute estimated delivery date (4 days from now)
         delivery_date = datetime.now() + timedelta(days=4)
         delivery_estimate = delivery_date.strftime("%A, %d %B %Y")
         
         with transaction.atomic():
-            # Validate and decrement stock
             order_items_to_create = []
             for item in cart_items:
                 variant = item.variant
@@ -102,7 +99,6 @@ class OrderService:
 
     @staticmethod
     def simulate_order_status(tracking_id, status, user, reason=None, comments=None):
-        """Simulate advancing/updating order status with lifecycle validations."""
         valid_statuses = [choice[0] for choice in Order.STATUS_CHOICES]
         if not status:
             raise ValidationError({"error": "status field is required."})
@@ -119,7 +115,6 @@ class OrderService:
         except Order.DoesNotExist:
             raise NotFound({"error": "Order not found."})
             
-        # Enforce order cancellation & return rules for non-admin users
         if not is_admin:
             if order.status in ['cancelled', 'returned'] and status != order.status:
                 raise ValidationError({"error": f"Cannot change status of a {order.status} order."})
@@ -135,26 +130,55 @@ class OrderService:
                 if delta.days > 10:
                     raise ValidationError({"error": "Return window has expired. Returns are only allowed within 10 days of delivery."})
                 
-        order.status = status
-        
-        # Save reasons if cancelling or returning
-        if status == 'cancelled':
-            order.cancel_reason = reason
-            order.cancel_comments = comments
-        elif status == 'return_requested':
-            order.return_reason = reason
-            order.return_comments = comments
+        with transaction.atomic():
+            if status == 'cancelled' and order.status != 'cancelled':
+                for item in order.items.all():
+                    if item.variant and not getattr(item, 'is_cancelled', False) and not getattr(item, 'is_returned', False):
+                        item.variant.stock += item.quantity
+                        item.variant.save()
+                        item.is_cancelled = True
+                        item.cancel_reason = reason or "Order cancelled"
+                        item.cancel_comments = comments
+                        item.save()
+                order.subtotal = 0
+                order.total_price = 0
+            elif status == 'returned' and order.status != 'returned':
+                for item in order.items.all():
+                    if item.variant and not getattr(item, 'is_cancelled', False) and not getattr(item, 'is_returned', False):
+                        item.variant.stock += item.quantity
+                        item.variant.save()
+                        item.is_returned = True
+                        item.return_reason = reason or "Order returned"
+                        item.return_comments = comments
+                        item.save()
+                order.subtotal = 0
+                order.total_price = 0
+
+            order.status = status
             
-        # If order is delivered, update payment status to paid if payment method is COD
-        if status == 'delivered' and order.payment_method == 'COD':
-            order.payment_status = 'paid'
-            
-        order.save()
+            # Save reasons if cancelling or returning
+            if status == 'cancelled':
+                order.cancel_reason = reason
+                order.cancel_comments = comments
+            elif status == 'return_requested':
+                order.return_reason = reason
+                order.return_comments = comments
+                AdminNotification.objects.create(
+                    message=f"Order {order.tracking_id}: Return request submitted.",
+                    tracking_id=order.tracking_id
+                )
+                
+            # If order is delivered, update payment status to paid if payment method is COD
+            if status == 'delivered' and order.payment_method == 'COD':
+                order.payment_status = 'paid'
+            if status in ['cancelled', 'returned'] and order.payment_status == 'paid':
+                order.payment_status = 'refunded'
+                
+            order.save()
         return order
 
     @staticmethod
     def cancel_order_item(item_id, quantity, reason, comments, user):
-        """Cancel a quantity of an individual order item during cancel window."""
         try:
             item = OrderItem.objects.select_related('order').get(id=item_id)
         except OrderItem.DoesNotExist:
@@ -166,7 +190,6 @@ class OrderService:
         if not is_admin and order.user != user:
             raise PermissionDenied({"error": "You do not have permission to modify this order."})
             
-        # Check cancel window
         if not is_admin and order.status not in ['processing', 'shipped', 'out_for_delivery']:
             raise ValidationError({"error": "This order is not in the cancellation window."})
             
@@ -213,16 +236,16 @@ class OrderService:
                     cancel_comments=comments
                 )
                 
-            # Check if order has any remaining active items
             if not order.items.filter(is_cancelled=False).exists():
                 order.status = 'cancelled'
+                if order.payment_status == 'paid':
+                    order.payment_status = 'refunded'
             order.save()
             
         return order
 
     @staticmethod
     def return_order_item(item_id, quantity, reason, comments, user):
-        """Return a quantity of an individual order item post-delivery."""
         try:
             item = OrderItem.objects.select_related('order').get(id=item_id)
         except OrderItem.DoesNotExist:
@@ -281,9 +304,15 @@ class OrderService:
                     return_comments=comments
                 )
                 
-            # Check if order has any remaining active items
             if not order.items.filter(is_cancelled=False, is_returned=False).exists():
                 order.status = 'returned'
+                if order.payment_status == 'paid':
+                    order.payment_status = 'refunded'
             order.save()
+            
+            AdminNotification.objects.create(
+                message=f"Order {order.tracking_id}: Return requested for item {item.variant.product.name if item.variant else 'product'}.",
+                tracking_id=order.tracking_id
+            )
             
         return order

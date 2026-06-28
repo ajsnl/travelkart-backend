@@ -11,13 +11,11 @@ class OrderCreateListView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        """List the current user's order history."""
         orders = Order.objects.filter(user=request.user).order_by('-created_at')
         serializer = OrderSerializer(orders, many=True)
         return Response(serializer.data)
         
     def post(self, request):
-        """Place a new order using the user's cart and selected address."""
         address_id = request.data.get('address_id')
         payment_method = request.data.get('payment_method', 'COD')
         order = OrderService.create_order(request.user, address_id, payment_method)

@@ -15,7 +15,7 @@ class Order(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
     tracking_id = models.CharField(max_length=50, unique=True, db_index=True)
     
-    # Shipping Address copy (frozen at purchase time)
+    # Shipping Address copy
     full_name = models.CharField(max_length=100)
     phone = models.CharField(max_length=15)
     address_line = models.TextField()
@@ -24,7 +24,7 @@ class Order(models.Model):
     pincode = models.CharField(max_length=10)
     country = models.CharField(max_length=50)
     
-    # Prices
+    #price
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     shipping_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
@@ -34,13 +34,13 @@ class Order(models.Model):
     payment_method = models.CharField(max_length=20, default='COD')
     payment_status = models.CharField(
         max_length=20, 
-        choices=[('pending', 'Pending'), ('paid', 'Paid'), ('failed', 'Failed')], 
+        choices=[('pending', 'Pending'), ('paid', 'Paid'), ('failed', 'Failed'), ('refunded', 'Refunded')], 
         default='pending'
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='processing')
     delivery_estimate = models.CharField(max_length=100, blank=True)
     
-    # Order-level cancel/return reason details
+    # full order cancel/return reason details
     cancel_reason = models.CharField(max_length=100, blank=True, null=True)
     cancel_comments = models.TextField(blank=True, null=True)
     return_reason = models.CharField(max_length=100, blank=True, null=True)
@@ -57,15 +57,28 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     
-    # Item-level cancel details
+    # Item level cancel details
     is_cancelled = models.BooleanField(default=False)
     cancel_reason = models.CharField(max_length=100, blank=True, null=True)
     cancel_comments = models.TextField(blank=True, null=True)
     
-    # Item-level return details
+    # Item level return details
     is_returned = models.BooleanField(default=False)
+    is_return_requested = models.BooleanField(default=False)
     return_reason = models.CharField(max_length=100, blank=True, null=True)
     return_comments = models.TextField(blank=True, null=True)
 
     def __str__(self):
-        return f"{self.quantity} x {self.variant.sku if self.variant else 'Deleted Item'} (Order {self.order.tracking_id})"
+        product_name = self.variant.product.name if self.variant else "Deleted Item"
+        return f"{self.quantity} x {product_name} (Order {self.order.tracking_id})"
+
+
+class AdminNotification(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    tracking_id = models.CharField(max_length=100, blank=True, null=True)
+    
+    def __str__(self):
+        return self.message

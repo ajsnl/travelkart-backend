@@ -6,8 +6,9 @@ from django.db import transaction
 from .serializers import AdminUserSerializer
 from .permissions import IsAdminUserRole
 from .services import AdminUserService
-from orders.models import Order
+from orders.models import Order, AdminNotification
 from orders.serializers import OrderSerializer
+from orders.services import OrderService
 
 
 class UserPagination(PageNumberPagination):
@@ -131,6 +132,9 @@ class AdminOrderDetailView(APIView):
             if status not in valid_statuses:
                 return Response({"error": f"Invalid status: {status}"}, status=400)
             
+            if order.status == 'delivered' and status in ['processing', 'shipped', 'out_for_delivery']:
+                return Response({"error": "Delivered orders cannot be changed back to processing, shipped, or out for delivery."}, status=400)
+            
             # Stock restoration logic
             if status in ['returned', 'cancelled'] and order.status not in ['returned', 'cancelled']:
                 with transaction.atomic():
@@ -139,13 +143,22 @@ class AdminOrderDetailView(APIView):
                         if item.variant and not getattr(item, 'is_cancelled', False) and not getattr(item, 'is_returned', False):
                             item.variant.stock += item.quantity
                             item.variant.save()
+                            if status == 'cancelled':
+                                item.is_cancelled = True
+                                item.cancel_reason = "Admin cancelled"
+                            else:
+                                item.is_returned = True
+                                item.return_reason = "Admin returned"
+                            item.save()
 
             order.status = status
             if status == 'delivered' and order.payment_method == 'COD':
                 order.payment_status = 'paid'
+            if status in ['cancelled', 'returned'] and order.payment_status == 'paid':
+                order.payment_status = 'refunded'
 
         if payment_status:
-            valid_payment_statuses = ['pending', 'paid', 'failed']
+            valid_payment_statuses = ['pending', 'paid', 'failed', 'refunded']
             if payment_status not in valid_payment_statuses:
                 return Response({"error": f"Invalid payment status: {payment_status}"}, status=400)
             order.payment_status = payment_status
@@ -156,3 +169,25 @@ class AdminOrderDetailView(APIView):
         order.save()
         serializer = OrderSerializer(order)
         return Response(serializer.data)
+
+
+class AdminNotificationListView(APIView):
+    permission_classes = [IsAdminUserRole]
+    
+    def get(self, request):
+        notifications = AdminNotification.objects.filter(is_read=False).order_by('-created_at')
+        data = [{
+            "id": n.id,
+            "message": n.message,
+            "tracking_id": n.tracking_id,
+            "created_at": n.created_at.isoformat()
+        } for n in notifications]
+        return Response(data)
+
+
+class AdminNotificationReadAllView(APIView):
+    permission_classes = [IsAdminUserRole]
+    
+    def post(self, request):
+        AdminNotification.objects.filter(is_read=False).update(is_read=True)
+        return Response({"success": True})
