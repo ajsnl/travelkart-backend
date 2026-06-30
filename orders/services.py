@@ -59,8 +59,10 @@ class OrderService:
                         "error": f"Insufficient stock for {variant.product.name} ({variant.sku}). Only {variant.stock} units available."
                     })
                 
-                variant.stock -= item.quantity
-                variant.save()
+                # Only deduct stock immediately if COD
+                if payment_method.upper() != 'RAZORPAY':
+                    variant.stock -= item.quantity
+                    variant.save()
                 
                 unit_price = CartService.get_item_subtotal(item) / item.quantity
                 order_items_to_create.append(OrderItem(
@@ -68,7 +70,51 @@ class OrderService:
                     quantity=item.quantity,
                     price=unit_price
                 ))
+            
+        razorpay_order_id = None
+        if payment_method.upper() == 'RAZORPAY':
+            from django.conf import settings
+            key_id = getattr(settings, 'RAZORPAY_KEY_ID', None)
+            key_secret = getattr(settings, 'RAZORPAY_KEY_SECRET', None)
+            
+            if not key_id or not key_secret or key_id.startswith('dummy') or key_secret.startswith('dummy'):
+                raise ValidationError({
+                    "error": "Razorpay payment credentials are not configured on the server. Please contact support."
+                })
                 
+            try:
+                import requests
+                import base64
+                auth_str = f"{key_id}:{key_secret}"
+                base64_auth = base64.b64encode(auth_str.encode('ascii')).decode('ascii')
+                headers = {
+                    "Authorization": f"Basic {base64_auth}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "amount": int(total_price * 100),
+                    "currency": "INR",
+                    "receipt": tracking_id
+                }
+                response = requests.post("https://api.razorpay.com/v1/orders", headers=headers, json=payload, timeout=10)
+                if response.status_code in [200, 201]:
+                    razorpay_order_id = response.json().get('id')
+                else:
+                    raise ValidationError({
+                        "error": f"Razorpay order initialization failed with status {response.status_code}: {response.text}"
+                    })
+            except requests.RequestException as e:
+                raise ValidationError({
+                    "error": f"Network error connecting to Razorpay payment gateway: {str(e)}"
+                })
+            except ValidationError:
+                raise
+            except Exception as e:
+                raise ValidationError({
+                    "error": f"An error occurred while setting up Razorpay checkout: {str(e)}"
+                })
+
+        with transaction.atomic():
             order = Order.objects.create(
                 user=user,
                 tracking_id=tracking_id,
@@ -86,14 +132,17 @@ class OrderService:
                 payment_method=payment_method,
                 delivery_estimate=delivery_estimate,
                 status='processing',
-                payment_status='pending'
+                payment_status='pending',
+                razorpay_order_id=razorpay_order_id
             )
             
             for order_item in order_items_to_create:
                 order_item.order = order
                 order_item.save()
                 
-            CartService.clear_cart(user)
+            # Only clear cart immediately if COD
+            if payment_method.upper() != 'RAZORPAY':
+                CartService.clear_cart(user)
             
         return order
 
@@ -365,3 +414,59 @@ class OrderService:
             item.save()
             
         return order
+
+    @staticmethod
+    def verify_payment(tracking_id, payment_id, order_id, signature, user):
+        try:
+            order = Order.objects.get(tracking_id=tracking_id, user=user)
+        except Order.DoesNotExist:
+            raise NotFound({"error": "Order not found."})
+            
+        from django.conf import settings
+        key_secret = getattr(settings, 'RAZORPAY_KEY_SECRET', None)
+        if not key_secret or key_secret == 'dummy_key_secret':
+            raise ValidationError({"error": "Razorpay credentials are not configured on the server."})
+            
+        import hmac
+        import hashlib
+        
+        try:
+            msg = f"{order_id}|{payment_id}"
+            generated_signature = hmac.new(
+                key=key_secret.encode('utf-8'),
+                msg=msg.encode('utf-8'),
+                digestmod=hashlib.sha256
+            ).hexdigest()
+            
+            if hmac.compare_digest(generated_signature, signature):
+                with transaction.atomic():
+                    # Deduct stock on successful payment verification
+                    for item in order.items.all():
+                        variant = item.variant
+                        if not variant:
+                            continue
+                        variant = ProductVariant.objects.select_for_update().get(id=variant.id)
+                        if variant.stock < item.quantity:
+                            raise ValidationError({
+                                "error": f"Insufficient stock for {variant.product.name} ({variant.sku}). Only {variant.stock} units available."
+                            })
+                        variant.stock -= item.quantity
+                        variant.save()
+                        
+                    order.payment_status = 'paid'
+                    order.razorpay_payment_id = payment_id
+                    order.razorpay_order_id = order_id
+                    order.razorpay_signature = signature
+                    order.save()
+                    
+                    CartService.clear_cart(user)
+                return True
+        except ValidationError:
+            raise
+        except Exception as e:
+            print("Error verifying signature:", e)
+            
+        order.payment_status = 'failed'
+        order.save()
+        return False
+

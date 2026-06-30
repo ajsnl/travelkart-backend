@@ -230,3 +230,8 @@ ACCOUNT_EMAIL_VERIFICATION = "none"
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR
+
+# Razorpay Configuration
+RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', 'rzp_test_dummy_key_id')
+RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET', 'dummy_key_secret')
+

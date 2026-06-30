@@ -73,3 +73,24 @@ class OrderItemReturnView(APIView):
         order = OrderService.return_order_item(item_id, quantity, reason, comments, request.user)
         serializer = OrderSerializer(order)
         return Response(serializer.data)
+
+class OrderPaymentVerifyView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, tracking_id):
+        razorpay_payment_id = request.data.get('razorpay_payment_id')
+        razorpay_order_id = request.data.get('razorpay_order_id')
+        razorpay_signature = request.data.get('razorpay_signature')
+        
+        is_valid = OrderService.verify_payment(
+            tracking_id=tracking_id,
+            payment_id=razorpay_payment_id,
+            order_id=razorpay_order_id,
+            signature=razorpay_signature,
+            user=request.user
+        )
+        
+        if is_valid:
+            return Response({"status": "success", "message": "Payment verified and order updated successfully."})
+        return Response({"status": "failed", "message": "Payment signature verification failed."}, status=400)
+
