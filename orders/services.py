@@ -11,7 +11,7 @@ from .models import Order, OrderItem, AdminNotification
 
 class OrderService:
     @staticmethod
-    def create_order(user, address_id, payment_method='COD'):
+    def create_order(user, address_id, payment_method='COD', coupon_code=None):
         """Place a new order using the user's cart and selected address."""
         if not address_id:
             raise ValidationError({"error": "address_id is required."})
@@ -31,14 +31,48 @@ class OrderService:
             
         cart_totals = CartService.get_cart_totals(cart)
         subtotal = cart_totals['total_price']
-        discount = cart_totals['discount_total']
+        
+        # Coupon application logic
+        coupon_discount = 0
+        coupon = None
+        if coupon_code:
+            from promotions.models import Coupon
+            from django.utils import timezone
+            try:
+                coupon = Coupon.objects.get(code=coupon_code.strip().upper())
+                now = timezone.now()
+                if not coupon.is_active or coupon.valid_from > now or coupon.valid_to < now:
+                    raise ValidationError({"error": "Coupon is expired or inactive."})
+                if coupon.usage_limit is not None and coupon.used_count >= coupon.usage_limit:
+                    raise ValidationError({"error": "Coupon limit has been reached."})
+                has_used = Order.objects.filter(user=user, coupon_code=coupon.code).exists()
+                if has_used:
+                    raise ValidationError({"error": "You have already used this coupon."})
+                if subtotal < coupon.min_order_amount:
+                    raise ValidationError({
+                        "error": f"Minimum purchase of ₹{coupon.min_order_amount:.2f} is required for this coupon."
+                    })
+                
+                if coupon.discount_type == 'PERCENT':
+                    coupon_discount = float(subtotal) * (coupon.discount_value / 100.0)
+                    if coupon.max_discount is not None:
+                        coupon_discount = min(coupon_discount, float(coupon.max_discount))
+                else:
+                    coupon_discount = float(coupon.discount_value)
+                
+                coupon_discount = min(coupon_discount, float(subtotal))
+            except Coupon.DoesNotExist:
+                raise ValidationError({"error": "Invalid coupon code."})
         
         is_gold = getattr(user, 'is_gold_member', False)
         if is_gold or subtotal > 1000:
             shipping_fee = 0
         else:
             shipping_fee = 99
-        total_price = subtotal + shipping_fee
+            
+        total_price = float(subtotal) - coupon_discount + shipping_fee
+        # Total discount is the sum of product level discounts + coupon discount
+        discount = float(cart_totals['discount_total']) + coupon_discount
         
         # Generate unique tracking ID
         tracking_id = f"TK-{random.randint(100000, 999999)}"
@@ -133,8 +167,13 @@ class OrderService:
                 delivery_estimate=delivery_estimate,
                 status='processing',
                 payment_status='pending',
-                razorpay_order_id=razorpay_order_id
+                razorpay_order_id=razorpay_order_id,
+                coupon_code=coupon.code if coupon else None
             )
+            
+            if coupon:
+                coupon.used_count += 1
+                coupon.save()
             
             for order_item in order_items_to_create:
                 order_item.order = order

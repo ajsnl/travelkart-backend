@@ -44,6 +44,7 @@ class Order(models.Model):
     razorpay_order_id = models.CharField(max_length=100, blank=True, null=True)
     razorpay_payment_id = models.CharField(max_length=100, blank=True, null=True)
     razorpay_signature = models.CharField(max_length=200, blank=True, null=True)
+    coupon_code = models.CharField(max_length=50, blank=True, null=True)
     
     
     # full order cancel/return reason details

@@ -1,9 +1,14 @@
-from django.urls import path
+from django.urls import path,include
+from rest_framework.routers import DefaultRouter
 from .views import (
     AdminUserListView, ToggleUserBlockView, AdminOrderListView, 
     AdminOrderDetailView, AdminNotificationListView, AdminNotificationReadAllView,
     AdminOrderItemApproveReturnView, AdminOrderItemRejectReturnView
 )
+from promotions.views import AdminCouponViewSet
+
+router=DefaultRouter()
+router.register(r'coupons',AdminCouponViewSet,basename='admin-coupon')
 
 urlpatterns = [
     path('users/', AdminUserListView.as_view()),
@@ -14,4 +19,5 @@ urlpatterns = [
     path('notifications/read_all/', AdminNotificationReadAllView.as_view(), name='admin-notifications-read-all'),
     path('order-items/<int:item_id>/approve-return/', AdminOrderItemApproveReturnView.as_view()),
     path('order-items/<int:item_id>/reject-return/', AdminOrderItemRejectReturnView.as_view()),
+    path('',include(router.urls)),
 ]

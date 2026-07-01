@@ -31,5 +31,5 @@ class OrderSerializer(serializers.ModelSerializer):
             'delivery_estimate', 'created_at', 'updated_at', 'items',
             'cancel_reason', 'cancel_comments', 'return_reason', 'return_comments',
             'razorpay_order_id', 'razorpay_payment_id', 'razorpay_signature',
-            'razorpay_key_id'
+            'razorpay_key_id','coupon_code'
         ]

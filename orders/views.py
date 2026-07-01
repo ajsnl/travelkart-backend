@@ -18,7 +18,8 @@ class OrderCreateListView(APIView):
     def post(self, request):
         address_id = request.data.get('address_id')
         payment_method = request.data.get('payment_method', 'COD')
-        order = OrderService.create_order(request.user, address_id, payment_method)
+        coupon_code=request.data.get('coupon_code')
+        order = OrderService.create_order(request.user, address_id, payment_method, coupon_code)
         serializer = OrderSerializer(order)
         return Response(serializer.data, status=201)
 
