@@ -83,6 +83,24 @@ class OrderService:
         delivery_estimate = delivery_date.strftime("%A, %d %B %Y")
         
         with transaction.atomic():
+            if payment_method.upper() == 'WALLET':
+                from wallet.models import Wallet, WalletTransaction
+                import decimal
+                wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+                if wallet.balance < decimal.Decimal(total_price):
+                    raise ValidationError({
+                        "error": f"Insufficient wallet balance. Your balance is ₹{wallet.balance:.2f}, but the order total is ₹{total_price:.2f}."
+                    })
+                wallet.balance -= decimal.Decimal(total_price)
+                wallet.save()
+                WalletTransaction.objects.create(
+                    user=user,
+                    amount=total_price,
+                    transaction_type='DEBIT',
+                    reason=f"Order payment ({tracking_id})",
+                    status='success'
+                )
+
             order_items_to_create = []
             for item in cart_items:
                 variant = item.variant
@@ -166,7 +184,7 @@ class OrderService:
                 payment_method=payment_method,
                 delivery_estimate=delivery_estimate,
                 status='processing',
-                payment_status='pending',
+                payment_status='paid' if payment_method.upper() == 'WALLET' else 'pending',
                 razorpay_order_id=razorpay_order_id,
                 coupon_code=coupon.code if coupon else None
             )
@@ -219,6 +237,16 @@ class OrderService:
                     raise ValidationError({"error": "Return window has expired. Returns are only allowed within 10 days of delivery."})
                 
         with transaction.atomic():
+            refund_amount = 0
+            if status in ['cancelled', 'returned'] and order.status not in ['cancelled', 'returned']:
+                if order.payment_status == 'paid':
+                    if status == 'cancelled' and order.status == 'processing':
+                        refund_amount = order.total_price
+                    else:
+                        refund_amount = order.total_price - order.shipping_fee
+                    if refund_amount < 0:
+                        refund_amount = 0
+
             if status == 'cancelled' and order.status != 'cancelled':
                 for item in order.items.all():
                     if item.variant and not getattr(item, 'is_cancelled', False) and not getattr(item, 'is_returned', False):
@@ -261,6 +289,19 @@ class OrderService:
                 order.payment_status = 'paid'
             if status in ['cancelled', 'returned'] and order.payment_status == 'paid':
                 order.payment_status = 'refunded'
+                if refund_amount > 0:
+                    from wallet.models import Wallet, WalletTransaction
+                    import decimal
+                    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+                    wallet.balance += decimal.Decimal(refund_amount)
+                    wallet.save()
+                    WalletTransaction.objects.create(
+                        user=order.user,
+                        amount=refund_amount,
+                        transaction_type='CREDIT',
+                        reason=f"Refund ({status.capitalize()}, Order {order.tracking_id})",
+                        status='success'
+                    )
                 
             order.save()
         return order
@@ -294,18 +335,16 @@ class OrderService:
             quantity = item.quantity
             
         with transaction.atomic():
+            # Check if order was in processing before mutations
+            is_processing = order.status == 'processing'
+            was_paid = order.payment_status == 'paid'
+
             # Restore stock
             if item.variant:
                 item.variant.stock += quantity
                 item.variant.save()
                 
-            # Update price and quantities
-            price_reduction = item.price * quantity
-            order.subtotal -= price_reduction
-            order.total_price -= price_reduction
-            if order.subtotal < 0: order.subtotal = 0
-            if order.total_price < 0: order.total_price = 0
-            
+            # Perform item updates first to see if they're all cancelled
             if quantity == item.quantity:
                 item.is_cancelled = True
                 item.cancel_reason = reason
@@ -323,12 +362,42 @@ class OrderService:
                     cancel_reason=reason,
                     cancel_comments=comments
                 )
-                
-            if not order.items.filter(is_cancelled=False).exists():
+
+            # Check if all items in the order are cancelled now
+            all_cancelled = not order.items.filter(is_cancelled=False).exists()
+
+            # Update price and quantities
+            price_reduction = item.price * quantity
+            
+            refund_amount = price_reduction
+            if is_processing and all_cancelled:
+                refund_amount += order.shipping_fee
+
+            order.subtotal -= price_reduction
+            order.total_price -= price_reduction
+            if order.subtotal < 0: order.subtotal = 0
+            if order.total_price < 0: order.total_price = 0
+
+            if all_cancelled:
                 order.status = 'cancelled'
-                if order.payment_status == 'paid':
+                if was_paid:
                     order.payment_status = 'refunded'
+
             order.save()
+
+            if was_paid and refund_amount > 0:
+                from wallet.models import Wallet, WalletTransaction
+                import decimal
+                wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+                wallet.balance += decimal.Decimal(refund_amount)
+                wallet.save()
+                WalletTransaction.objects.create(
+                    user=order.user,
+                    amount=refund_amount,
+                    transaction_type='CREDIT',
+                    reason=f"Refund (item cancel, Order {order.tracking_id})",
+                    status='success'
+                )
             
         return order
 
@@ -416,6 +485,20 @@ class OrderService:
                 
             # Reduce subtotal and total_price
             price_reduction = item.price * item.quantity
+            if order.payment_status == 'paid':
+                from wallet.models import Wallet, WalletTransaction
+                import decimal
+                wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+                wallet.balance += decimal.Decimal(price_reduction)
+                wallet.save()
+                WalletTransaction.objects.create(
+                    user=order.user,
+                    amount=price_reduction,
+                    transaction_type='CREDIT',
+                    reason=f"Refund (item return, Order {order.tracking_id})",
+                    status='success'
+                )
+
             order.subtotal -= price_reduction
             order.total_price -= price_reduction
             if order.subtotal < 0: order.subtotal = 0
