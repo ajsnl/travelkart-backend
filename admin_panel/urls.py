@@ -5,10 +5,11 @@ from .views import (
     AdminOrderDetailView, AdminNotificationListView, AdminNotificationReadAllView,
     AdminOrderItemApproveReturnView, AdminOrderItemRejectReturnView
 )
-from promotions.views import AdminCouponViewSet
+from promotions.views import AdminCouponViewSet, AdminBannerViewSet
 
 router=DefaultRouter()
 router.register(r'coupons',AdminCouponViewSet,basename='admin-coupon')
+router.register(r'banners',AdminBannerViewSet,basename='admin-banner')
 
 urlpatterns = [
     path('users/', AdminUserListView.as_view()),

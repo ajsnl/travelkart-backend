@@ -17,3 +17,13 @@ class Coupon(models.Model):
     usage_limit=models.IntegerField(null=True)
     used_count=models.IntegerField(default=0)
 
+class Banner(models.Model):
+    title = models.CharField(max_length=100)
+    subtitle = models.CharField(max_length=200, blank=True, default="")
+    image = models.ImageField(upload_to="banners/")
+    is_active = models.BooleanField(default=True)
+    redirect_url = models.URLField(blank=True, null=True)
+    priority_order = models.IntegerField(default=0)
+    display_position = models.CharField(max_length=50)
+    created_at = models.DateField(auto_now_add=True)
+    

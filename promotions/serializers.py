@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Coupon
+from .models import Coupon, Banner
 from django.utils import timezone
 
 class CouponSerializer(serializers.ModelSerializer):
@@ -30,3 +30,20 @@ class CouponSerializer(serializers.ModelSerializer):
             })
             
         return data
+
+class BannerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Banner
+        fields = [
+            'id', 'title', 'subtitle', 'image', 'is_active', 
+            'redirect_url', 'priority_order', 'display_position', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+    def validate_display_position(self, value):
+        valid_positions = ['hero', 'bottom']
+        if value not in valid_positions:
+            raise serializers.ValidationError(
+                f"Invalid position. Must be one of: {', '.join(valid_positions)}"
+            )
+        return value
