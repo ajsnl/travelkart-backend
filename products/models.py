@@ -42,8 +42,20 @@ class Product(models.Model):
     attributes = models.JSONField(default=dict, blank=True)
     
     # Ratings 
-    avg_rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)
-    total_ratings_count = models.IntegerField(default=0)
+    average_rating = models.FloatField(default=0.0)
+    total_reviews = models.IntegerField(default=0)
+
+    def update_rating_stats(self):
+        from reviews.models import Review
+        # Only active reviews count
+        active_reviews = Review.objects.filter(product=self, is_active=True)
+        stats = active_reviews.aggregate(
+            avg_rating=models.Avg('rating'),
+            total_count=models.Count('id')
+        )
+        self.average_rating = stats['avg_rating'] or 0.0
+        self.total_reviews = stats['total_count'] or 0
+        self.save(update_fields=['average_rating', 'total_reviews'])
     
     # Sales
     total_sales = models.IntegerField(default=0)

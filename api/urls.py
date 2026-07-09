@@ -23,5 +23,8 @@ urlpatterns = [
     path('promotions/',include('promotions.urls')),
 
     #wallet routes
-    path('wallet/',include('wallet.urls'))
+    path('wallet/',include('wallet.urls')),
+
+    #reviews routes
+    path('reviews/',include('reviews.urls')),
 ]

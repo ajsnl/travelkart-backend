@@ -10,6 +10,8 @@ class ProductListSerializer(serializers.ModelSerializer):
     category_name = serializers.ReadOnlyField(source='category.name')
     primary_image = serializers.SerializerMethodField()
     min_price = serializers.SerializerMethodField()
+    avg_rating = serializers.FloatField(source='average_rating', read_only=True)
+    total_ratings_count = serializers.IntegerField(source='total_reviews', read_only=True)
 
     class Meta:
         model = Product
@@ -44,6 +46,8 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     category_name = serializers.ReadOnlyField(source='category.name')
     is_best_seller = serializers.SerializerMethodField()
     category_active = serializers.SerializerMethodField()
+    avg_rating = serializers.FloatField(source='average_rating', read_only=True)
+    total_ratings_count = serializers.IntegerField(source='total_reviews', read_only=True)
 
     class Meta:
         model = Product
