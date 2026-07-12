@@ -8,11 +8,13 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.contrib.auth import get_user_model
+from rest_framework.exceptions import ValidationError
+
 
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from dj_rest_auth.registration.views import SocialLoginView
 
-from .models import User, OTP, Address
+from .models import User, OTP, Address,Referral
 from .serializers import (
     RegisterSerializer, LoginSerializer, ProfileSerializer,
     SendEmailOTPSerializer, VerifyEmailOTPSerializer,
@@ -291,3 +293,165 @@ class UploadProfilePicture(APIView):
                 "image_url": user.profile_picture.url
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+from django.conf import settings 
+from django.utils import timezone  
+import requests 
+import random
+import base64
+import hmac
+import hashlib
+
+class GoldMembership(APIView):
+    permission_classes=[IsAuthenticated]
+
+    def patch(self,request):
+        user=request.user
+        if user.is_gold_member:
+            raise ValidationError({"error": "You are already a Gold Member."})
+        
+        key_id=getattr(settings,'RAZORPAY_KEY_ID',None)
+        key_secret=getattr(settings,'RAZORPAY_KEY_SECRET',None)
+        if not key_id or not key_secret or key_id.startswith('dummy') or key_secret.startswith('dummy'):
+            raise ValidationError({"error": "Razorpay payment credentials are not configured on the server. Please contact support."})
+        
+        try:
+            auth_str = f"{key_id}:{key_secret}"
+            base64_auth = base64.b64encode(auth_str.encode('ascii')).decode('ascii')
+            headers = {
+                "Authorization": f"Basic {base64_auth}",
+                "Content-Type": "application/json"
+            }
+            receipt = f"GOLD-{user.id}-{random.randint(100000, 999999)}"
+            payload = {
+                "amount": 149900,
+                "currency": "INR",
+                "receipt": receipt
+            }
+            response = requests.post("https://api.razorpay.com/v1/orders", headers=headers, json=payload, timeout=10)
+            if response.status_code in [200, 201]:
+                razorpay_order_id = response.json().get('id')
+                return Response({
+                    "razorpay_order_id": razorpay_order_id,
+                    "amount": 1499,
+                    "currency": "INR",
+                    "razorpay_key_id": key_id
+                })          
+            else:
+                raise ValidationError({"error": f"Razorpay order initialization failed with status {response.status_code}: {response.text}"})
+        except requests.RequestException as e:
+            raise ValidationError({"error": f"Network error connecting to Razorpay: {str(e)}"})
+        except ValidationError:
+            raise
+        except Exception as e:
+            raise ValidationError({"error": f"An error occurred: {str(e)}"})
+        
+    def post(self,request):
+        user=request.user
+        razorpay_payment_id = request.data.get('razorpay_payment_id')
+        razorpay_order_id = request.data.get('razorpay_order_id')
+        razorpay_signature = request.data.get('razorpay_signature')
+        if not all([razorpay_payment_id, razorpay_order_id, razorpay_signature]):
+            raise ValidationError({"error": "razorpay_payment_id, razorpay_order_id, and razorpay_signature are required."})
+        key_id = getattr(settings, 'RAZORPAY_KEY_ID', None)
+        key_secret = getattr(settings, 'RAZORPAY_KEY_SECRET', None)
+        if not key_secret or key_secret == 'dummy_key_secret':
+            raise ValidationError({"error": "Razorpay credentials are not configured on the server."})
+        # Verify payment signature using HMAC-SHA256
+        msg = f"{razorpay_order_id}|{razorpay_payment_id}"
+        generated_signature = hmac.new(
+            key=key_secret.encode('utf-8'),
+            msg=msg.encode('utf-8'),
+            digestmod=hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(generated_signature, razorpay_signature):
+            raise ValidationError({"error": "Payment signature verification failed."})
+        # Fetch order details from Razorpay to verify receipt intent and amount
+        try:
+            auth_str = f"{key_id}:{key_secret}"
+            base64_auth = base64.b64encode(auth_str.encode('ascii')).decode('ascii')
+            headers = {
+                "Authorization": f"Basic {base64_auth}",
+                "Content-Type": "application/json"
+            }
+            response = requests.get(f"https://api.razorpay.com/v1/orders/{razorpay_order_id}", headers=headers, timeout=10)
+            if response.status_code == 200:
+                order_details = response.json()
+                receipt = order_details.get("receipt", "")
+                amount = order_details.get("amount", 0)
+                
+                # Check that receipt aligns with user id and starts with GOLD
+                expected_receipt_prefix = f"GOLD-{user.id}-"
+                if not receipt.startswith(expected_receipt_prefix):
+                    raise ValidationError({"error": "This payment order was not created for your Gold Membership purchase."})
+                
+                # Check that amount paid matches the membership cost (₹1,499 in paise)
+                if amount != 149900:
+                    raise ValidationError({"error": "Incorrect payment amount for Gold Membership."})
+            else:
+                raise ValidationError({"error": f"Failed to retrieve order details from Razorpay: status {response.status_code}"})
+        except requests.RequestException as e:
+            raise ValidationError({"error": f"Network error connecting to Razorpay to verify order details: {str(e)}"})
+        # Everything verified! Activate Gold Membership
+        user.is_gold_member = True
+        user.gold_purchased_at = timezone.now()
+        user.save()
+        return Response({
+            "status": "success",
+            "message": "Successfully upgraded to Gold Membership."
+        })
+
+
+class ReferralStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        
+        # Ensure referral code is generated
+        if not user.referral_code:
+            import uuid
+            code = str(uuid.uuid4())[:8].upper()
+            while User.objects.filter(referral_code=code).exists():
+                code = str(uuid.uuid4())[:8].upper()
+            user.referral_code = code
+            user.save(update_fields=['referral_code'])
+
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        referral_url = f"{frontend_url}/signup?ref={user.referral_code}"
+        
+        # Query referrals sent by this user
+        referrals_query = Referral.objects.filter(referrer=user).select_related('referred_user')
+        
+        referrals_list = []
+        total_earned = 0
+        gold_days_earned = 0
+        for ref in referrals_query:
+            status_display = ref.get_status_display()
+            is_rewarded = ref.status == 'rewarded'
+            
+            referrals_list.append({
+                "id": ref.id,
+                "email": ref.referred_user.email,
+                "username": ref.referred_user.username,
+                "status": ref.status,  # signed_up, first_order, rewarded
+                "status_display": status_display,
+                "created_at": ref.created_at,
+                "rewarded_at": ref.rewarded_at,
+            })
+            
+            if is_rewarded:
+                total_earned += 99
+                gold_days_earned += 3
+
+        return Response({
+            "referral_code": user.referral_code,
+            "referral_url": referral_url,
+            "total_earned": total_earned,
+            "gold_days_earned": gold_days_earned,
+            "referrals": referrals_list
+        })
+
+
+
+

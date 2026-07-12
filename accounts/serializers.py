@@ -14,10 +14,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True)
     profile_picture = serializers.ImageField(required=False)
+    referral_code_used = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
     class Meta:
         model = User
-        fields = ['email', 'username', 'password', 'confirm_password', 'phone', 'dob','first_name', 'last_name','profile_picture']
+        fields = ['email', 'username', 'password', 'confirm_password', 'phone', 'dob','first_name', 'last_name','profile_picture', 'referral_code_used']
 
     def validate_email(self, value):
         return value.lower()
@@ -42,6 +43,23 @@ class RegisterSerializer(serializers.ModelSerializer):
         #  use global validator
         StrongPasswordValidator()(password)
 
+        # Referral validation
+        ref_code = data.get('referral_code_used')
+        if ref_code:
+            ref_code = ref_code.strip().upper()
+            try:
+                referrer = User.objects.get(referral_code=ref_code)
+                
+                # Check for self-referrals
+                if referrer.email.lower() == data.get('email', '').lower():
+                    raise serializers.ValidationError({"referral_code_used": "You cannot refer yourself."})
+                if referrer.phone and data.get('phone') and referrer.phone == data.get('phone'):
+                    raise serializers.ValidationError({"referral_code_used": "You cannot refer yourself using the same phone number."})
+                
+                data['referred_by'] = referrer
+            except User.DoesNotExist:
+                raise serializers.ValidationError({"referral_code_used": "Invalid referral code."})
+
         return data
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
@@ -49,11 +67,22 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('confirm_password')  # remove extra field
         password = validated_data.pop('password')
+        referral_code_used = validated_data.pop('referral_code_used', None)
+        referred_by = validated_data.pop('referred_by', None)
 
         user = User.objects.create_user(
             password=password,
+            referred_by=referred_by,
             **validated_data
         )
+
+        if referred_by:
+            from accounts.models import Referral
+            Referral.objects.create(
+                referrer=referred_by,
+                referred_user=user,
+                status='signed_up'
+            )
 
         return user
     
@@ -184,8 +213,13 @@ class ProfileSerializer(serializers.ModelSerializer):
                    'is_social',
                    'is_verified',
                    'profile_picture',
-                   'updated_at']
-        read_only_fields = ['is_gold_member', 'joined_date', 'addresses', 'is_social', 'is_verified', 'profile_picture', 'updated_at']
+                   'updated_at',
+                   'referral_code']
+        read_only_fields = ['is_gold_member', 'joined_date', 'addresses', 'is_social', 'is_verified', 'profile_picture', 'updated_at', 'referral_code']
+
+    def to_representation(self, instance):
+        instance.check_gold_status()
+        return super().to_representation(instance)
 
     def update(self, instance, validated_data):
         new_email = validated_data.get('email', instance.email)

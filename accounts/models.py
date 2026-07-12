@@ -75,18 +75,52 @@ class User(AbstractUser):
 
     is_gold_member = models.BooleanField(default=False)
     gold_purchased_at = models.DateTimeField(null=True, blank=True)
+    gold_expires_at=models.DateTimeField(null=True,blank=True)
+
+    referral_code= models.CharField(max_length=50,unique=True,null=True,blank=True)
+    referred_by=models.ForeignKey('self',on_delete=models.SET_NULL,null=True,blank=True,related_name='referees')
+    is_referral_rewarded=models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+    def check_gold_status(self):
+        if self.is_gold_member and self.gold_expires_at and timezone.now() > self.gold_expires_at:
+            self.is_gold_member = False
+            self.gold_expires_at = None
+            self.save(update_fields=['is_gold_member', 'gold_expires_at'])
+        return self.is_gold_member
+
     def save(self, *args, **kwargs):
         if self.phone == "":
             self.phone = None
+        if not self.referral_code:
+            import uuid
+            code = str(uuid.uuid4())[:8].upper()
+            while self.__class__.objects.filter(referral_code=code).exists():
+                code = str(uuid.uuid4())[:8].upper()
+            self.referral_code = code
         super().save(*args, **kwargs)
 
     def __str__(self):
         return self.email
     
+class Referral(models.Model):
+    STATUS_CHOICES = [
+        ('signed_up', 'Signed Up'),
+        ('first_order', 'First Order'),
+        ('rewarded', 'Rewarded'),
+    ]
+    referrer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='referrals_sent')
+    referred_user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='referral_received')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='signed_up')
+    rewarded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return f"{self.referrer.email} -> {self.referred_user.email} ({self.status})"
 
 
 class OTP(models.Model):

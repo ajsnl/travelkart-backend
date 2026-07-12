@@ -79,7 +79,20 @@ class OrderService:
         while Order.objects.filter(tracking_id=tracking_id).exists():
             tracking_id = f"TK-{random.randint(100000, 999999)}"
             
-        delivery_date = datetime.now() + timedelta(days=4)
+        if is_gold:
+            delivery_date = datetime.now() + timedelta(days=2)
+        else:
+            import re
+            max_days = 4  # default fallback
+
+            for item in cart_items:
+                est_str = getattr(item.variant.product, 'est_delivery_time', '')
+                match = re.search(r'\d+', est_str or '')
+                
+                if match:
+                    max_days = max(max_days, int(match.group()))
+
+            delivery_date = datetime.now() + timedelta(days=max_days)
         delivery_estimate = delivery_date.strftime("%A, %d %B %Y")
         
         with transaction.atomic():

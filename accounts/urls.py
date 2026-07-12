@@ -1,6 +1,6 @@
 from django.urls import path,include
 from .views import RegisterView,LoginView,ProfileView,LogoutView,SendEmailOTPView,ResetPasswordView,VerifyEmailOTPView,ForgotPasswordView,UploadProfilePicture
-from .views import ResendOTPView,ForgotPasswordVerifyOTPView,ChangePasswordView,AddressViewSet,RefreshView,UserMeView,get_csrf_token,GoogleLogin
+from .views import ResendOTPView,ForgotPasswordVerifyOTPView,ChangePasswordView,AddressViewSet,RefreshView,UserMeView,get_csrf_token,GoogleLogin,GoldMembership,ReferralStatsView
 from rest_framework.routers import DefaultRouter
 
 router = DefaultRouter()
@@ -22,6 +22,7 @@ urlpatterns = [
     path("user/me/", UserMeView.as_view()),
     path("csrf/", get_csrf_token),
     path('upload-profile/', UploadProfilePicture.as_view()),
+    path('referrals/',ReferralStatsView.as_view(),name='referral_stats'),
 
     # dj-rest-auth endpoints 
     path('dj-rest-auth/', include('dj_rest_auth.urls')),
@@ -30,6 +31,7 @@ urlpatterns = [
     #  Google OAuth
     path('social/', include('allauth.socialaccount.urls')),
     path('google/', GoogleLogin.as_view(), name='google_login'),
+    path('gold-membership/',GoldMembership.as_view(),name='gold_membership')
 ]
 
 
