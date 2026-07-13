@@ -80,7 +80,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             cache[obj.category_id] = max_sales or 0
             
         max_sales = cache[obj.category_id]
-        if max_sales > 0:
+        if max_sales > 5:
             return obj.total_sales == max_sales
         return False
 

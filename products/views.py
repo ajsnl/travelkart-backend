@@ -34,6 +34,15 @@ class AdminCategoryViewSet(viewsets.ModelViewSet):
 
     pagination_class = CategoryPagination
 
+    def get_queryset(self):
+        queryset = Category.objects.filter(is_deleted=False).order_by('-created_at')
+        cat_type = self.request.query_params.get('type')
+        if cat_type == 'category':
+            queryset = queryset.filter(parent__isnull=True)
+        elif cat_type == 'subcategory':
+            queryset = queryset.filter(parent__isnull=False)
+        return queryset
+
     
 
     def destroy(self, request, *args, **kwargs):
@@ -54,7 +63,7 @@ class UserCategoryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ProductPagination(PageNumberPagination):
-    page_size = 10
+    page_size = 9
     page_size_query_param = 'page_size'
     max_page_size = 100
 

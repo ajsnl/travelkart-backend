@@ -30,8 +30,29 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def validate_dob(self, value):
         from datetime import date
-        if value and value > date.today():
-            raise serializers.ValidationError("Date of birth cannot be in the future.")
+        if value:
+            today = date.today()
+            age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+            if age < 13:
+                raise serializers.ValidationError("You must be at least 13 years old.")
+        return value
+
+    def validate_phone(self, value):
+        import re
+        if value and not re.match(r'^\d{10}$', value):
+            raise serializers.ValidationError("Phone number must be exactly 10 digits.")
+        return value
+
+    def validate_first_name(self, value):
+        import re
+        if value and not re.match(r'^[A-Za-z\s]+$', value):
+            raise serializers.ValidationError("First name must contain only letters and spaces.")
+        return value
+
+    def validate_last_name(self, value):
+        import re
+        if value and not re.match(r'^[A-Za-z\s]+$', value):
+            raise serializers.ValidationError("Last name must contain only letters and spaces.")
         return value
 
     def validate(self, data):
@@ -231,8 +252,29 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     def validate_dob(self, value):
         from datetime import date
-        if value and value > date.today():
-            raise serializers.ValidationError("Date of birth cannot be in the future.")
+        if value:
+            today = date.today()
+            age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+            if age < 13:
+                raise serializers.ValidationError("You must be at least 13 years old.")
+        return value
+
+    def validate_phone(self, value):
+        import re
+        if value and not re.match(r'^\d{10}$', value):
+            raise serializers.ValidationError("Phone number must be exactly 10 digits.")
+        return value
+
+    def validate_first_name(self, value):
+        import re
+        if value and not re.match(r'^[A-Za-z\s]+$', value):
+            raise serializers.ValidationError("First name must contain only letters and spaces.")
+        return value
+
+    def validate_last_name(self, value):
+        import re
+        if value and not re.match(r'^[A-Za-z\s]+$', value):
+            raise serializers.ValidationError("Last name must contain only letters and spaces.")
         return value
     
     def get_full_name(self, obj):
