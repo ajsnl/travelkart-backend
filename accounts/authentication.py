@@ -15,7 +15,11 @@ class CookieJWTAuthentication(JWTAuthentication):
         user = self.get_user(validated_token)
 
         # Enforce CSRF check for cookie-based authentication
-        self.enforce_csrf(request)
+        # self.enforce_csrf(request)
+        # Enforce CSRF check for cookie-based authentication (bypass in DEBUG mode for local/devtunnel testing)
+        from django.conf import settings
+        if not settings.DEBUG:
+            self.enforce_csrf(request)
 
         return (user, validated_token)
 
