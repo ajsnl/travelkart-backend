@@ -5,7 +5,7 @@ from django.db.models import Sum, Q
 from django.db import transaction
 from .serializers import AdminUserSerializer
 from .permissions import IsAdminUserRole
-from .services import AdminUserService
+from .services import AdminUserService, AdminStatsService
 from orders.models import Order, AdminNotification
 from orders.serializers import OrderSerializer
 from orders.services import OrderService
@@ -209,3 +209,70 @@ class AdminOrderItemRejectReturnView(APIView):
         order = OrderService.reject_item_return(item_id, request.user)
         serializer = OrderSerializer(order)
         return Response(serializer.data)
+
+
+class AdminDashboardStatsView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def get(self, request):
+        chart_filter = request.GET.get('chart_filter', 'daily')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        response_data = AdminStatsService.get_dashboard_stats(
+            chart_filter=chart_filter,
+            start_date_str=start_date,
+            end_date_str=end_date
+        )
+        return Response(response_data)
+
+
+class AdminSalesReportView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def get(self, request):
+        report_type = request.GET.get('report_type', 'daily')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        orders, summary = AdminStatsService.get_sales_report(
+            report_type=report_type,
+            start_date_str=start_date,
+            end_date_str=end_date
+        )
+
+        export_all = request.GET.get('export', 'false').lower() == 'true'
+
+        if not export_all:
+            from rest_framework.pagination import PageNumberPagination
+            paginator = PageNumberPagination()
+            paginator.page_size = 10
+            paginated_orders = paginator.paginate_queryset(orders, request)
+        else:
+            paginated_orders = orders
+
+        orders_data = []
+        for order in paginated_orders:
+            orders_data.append({
+                "id": order.id,
+                "tracking_id": order.tracking_id,
+                "customer_email": order.user.email,
+                "customer_name": order.full_name,
+                "created_at": order.created_at.isoformat(),
+                "coupon_code": order.coupon_code or "N/A",
+                "discount": float(order.discount),
+                "total_price": float(order.total_price), # Net Amount
+                "gross_price": float(order.total_price + order.discount), # Gross Amount
+                "payment_status": order.payment_status,
+                "status": order.status
+            })
+
+        if not export_all:
+            response = paginator.get_paginated_response(orders_data)
+            response.data['summary'] = summary
+            return response
+        else:
+            return Response({
+                "summary": summary,
+                "orders": orders_data
+            })

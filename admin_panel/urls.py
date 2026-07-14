@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AdminUserListView, ToggleUserBlockView, AdminOrderListView, 
     AdminOrderDetailView, AdminNotificationListView, AdminNotificationReadAllView,
-    AdminOrderItemApproveReturnView, AdminOrderItemRejectReturnView
+    AdminOrderItemApproveReturnView, AdminOrderItemRejectReturnView,AdminDashboardStatsView,AdminSalesReportView
 )
 from promotions.views import AdminCouponViewSet, AdminBannerViewSet
 
@@ -12,6 +12,8 @@ router.register(r'coupons',AdminCouponViewSet,basename='admin-coupon')
 router.register(r'banners',AdminBannerViewSet,basename='admin-banner')
 
 urlpatterns = [
+    path('dashboard-stats/', AdminDashboardStatsView.as_view()),
+    path('sales-report/', AdminSalesReportView.as_view()),
     path('users/', AdminUserListView.as_view()),
     path('users/<int:user_id>/block/', ToggleUserBlockView.as_view()),
     path('orders/', AdminOrderListView.as_view(), name='admin-order-list'),
