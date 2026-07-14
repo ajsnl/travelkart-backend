@@ -5,3 +5,4 @@ db.sqlite3
 venv/
 media/
 staticfiles/
+node_modules/
