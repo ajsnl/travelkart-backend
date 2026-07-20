@@ -14,14 +14,23 @@ class WishlistService:
         ).order_by('-added_at')
 
         if ordering:
-            if ordering == 'price_asc':
+            if ordering == 'price_asc' or ordering == 'price_desc':
+                from django.db.models import Case, When, F, DecimalField
+                effective_price_expr = Case(
+                    When(product__variants__offer_type='percentage', product__variants__offer_value__gt=0,
+                         then=F('product__variants__price') - (F('product__variants__price') * F('product__variants__offer_value') / 100.0)),
+                    When(product__variants__offer_type='flat', product__variants__offer_value__gt=0,
+                         then=F('product__variants__price') - F('product__variants__offer_value')),
+                    default=F('product__variants__price'),
+                    output_field=DecimalField()
+                )
                 queryset = queryset.annotate(
-                    min_price=Min('product__variants__price', filter=Q(product__variants__is_active=True))
-                ).order_by('min_price')
-            elif ordering == 'price_desc':
-                queryset = queryset.annotate(
-                    min_price=Min('product__variants__price', filter=Q(product__variants__is_active=True))
-                ).order_by('-min_price')
+                    min_price=Min(effective_price_expr, filter=Q(product__variants__is_active=True))
+                )
+                if ordering == 'price_asc':
+                    queryset = queryset.order_by('min_price')
+                else:
+                    queryset = queryset.order_by('-min_price')
             elif ordering == 'name_asc':
                 queryset = queryset.order_by('product__name')
             elif ordering == 'name_desc':

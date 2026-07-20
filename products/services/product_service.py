@@ -84,28 +84,52 @@ class ProductService:
             is_featured_bool = is_featured.lower() in ['true', '1']
             queryset = queryset.filter(is_featured=is_featured_bool)
 
-        # Price range filter
+        # Price range filter using active variants' effective (offer) price
         min_price = query_params.get('min_price')
         max_price = query_params.get('max_price')
+        
+        from django.db.models import Case, When, F, DecimalField, Min
+        
+        effective_price_expr = Case(
+            When(variants__offer_type='percentage', variants__offer_value__gt=0,
+                 then=F('variants__price') - (F('variants__price') * F('variants__offer_value') / 100.0)),
+            When(variants__offer_type='flat', variants__offer_value__gt=0,
+                 then=F('variants__price') - F('variants__offer_value')),
+            default=F('variants__price'),
+            output_field=DecimalField()
+        )
+
         if min_price or max_price:
-            price_query = Q(variants__is_active=True)
+            from products.models import ProductVariant
+            matching_variants = ProductVariant.objects.filter(is_active=True).annotate(
+                effective_price=Case(
+                    When(offer_type='percentage', offer_value__gt=0,
+                         then=F('price') - (F('price') * F('offer_value') / 100.0)),
+                    When(offer_type='flat', offer_value__gt=0,
+                         then=F('price') - F('offer_value')),
+                    default=F('price'),
+                    output_field=DecimalField()
+                )
+            )
             if min_price:
-                price_query &= Q(variants__price__gte=min_price)
+                matching_variants = matching_variants.filter(effective_price__gte=min_price)
             if max_price:
-                price_query &= Q(variants__price__lte=max_price)
-            queryset = queryset.filter(price_query).distinct()
+                matching_variants = matching_variants.filter(effective_price__lte=max_price)
+            
+            matching_product_ids = matching_variants.values_list('product_id', flat=True).distinct()
+            queryset = queryset.filter(id__in=matching_product_ids)
 
         # Sorting
         ordering = query_params.get('ordering')
         if ordering:
-            if ordering == 'price_asc':
+            if ordering == 'price_asc' or ordering == 'price_desc':
                 queryset = queryset.annotate(
-                    min_active_price=Min('variants__price', filter=Q(variants__is_active=True))
-                ).order_by('min_active_price')
-            elif ordering == 'price_desc':
-                queryset = queryset.annotate(
-                    min_active_price=Min('variants__price', filter=Q(variants__is_active=True))
-                ).order_by('-min_active_price')
+                    min_effective_price=Min(effective_price_expr, filter=Q(variants__is_active=True))
+                )
+                if ordering == 'price_asc':
+                    queryset = queryset.order_by('min_effective_price')
+                else:
+                    queryset = queryset.order_by('-min_effective_price')
             elif ordering == 'name_asc':
                 queryset = queryset.order_by('name')
             elif ordering == 'name_desc':

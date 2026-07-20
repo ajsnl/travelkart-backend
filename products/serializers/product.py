@@ -80,12 +80,55 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             cache[obj.category_id] = max_sales or 0
             
         max_sales = cache[obj.category_id]
-        if max_sales > 5:
+        if max_sales >= 5:
             return obj.total_sales == max_sales
         return False
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
+        
+        if rep.get('variants'):
+            # Helper to get effective price
+            def get_effective_price(var_data):
+                offer_price_val = var_data.get('offer_price')
+                if offer_price_val is not None:
+                    try:
+                        return float(offer_price_val)
+                    except (ValueError, TypeError):
+                        pass
+                return float(var_data.get('price', 0))
+
+            variants_list = rep['variants']
+            request = self.context.get('request')
+            
+            # 1. Filter variants by price if requested
+            if request:
+                min_price = request.query_params.get('min_price')
+                max_price = request.query_params.get('max_price')
+                if min_price or max_price:
+                    filtered_variants = []
+                    for var_data in variants_list:
+                        price = get_effective_price(var_data)
+                        matches = True
+                        if min_price:
+                            try:
+                                if price < float(min_price):
+                                    matches = False
+                            except (ValueError, TypeError):
+                                pass
+                        if max_price:
+                            try:
+                                if price > float(max_price):
+                                    matches = False
+                            except (ValueError, TypeError):
+                                pass
+                        if matches:
+                            filtered_variants.append(var_data)
+                    variants_list = filtered_variants
+            
+            # 2. Sort variants by effective price (low to high)
+            rep['variants'] = sorted(variants_list, key=get_effective_price)
+
         rep['images'] = [img for img in rep.get('images', []) if img.get('variant') is None]
         return rep
 
