@@ -1,6 +1,7 @@
 from django.urls import path,include
 from .views import RegisterView,LoginView,ProfileView,LogoutView,SendEmailOTPView,ResetPasswordView,VerifyEmailOTPView,ForgotPasswordView,UploadProfilePicture
 from .views import ResendOTPView,ForgotPasswordVerifyOTPView,ChangePasswordView,AddressViewSet,RefreshView,UserMeView,get_csrf_token,GoogleLogin,GoldMembership,ReferralStatsView
+from .views import SendSignupOTPView, VerifySignupOTPView
 from rest_framework.routers import DefaultRouter
 
 router = DefaultRouter()
@@ -8,6 +9,8 @@ router.register(r'addresses', AddressViewSet, basename='addresses')
 
 urlpatterns = [
     path('signup/', RegisterView.as_view(), name='signup'),
+    path('signup-otp/send/',SendSignupOTPView.as_view(),name='send_signup_otp'),
+    path('signup-otp/verify/',VerifySignupOTPView.as_view(),name='verify_signup_otp'),
     path('login/',LoginView.as_view(),name='login'),
     path('profile/',ProfileView.as_view(),name='profile'),
     path('logout/',LogoutView.as_view(),name='logout'),

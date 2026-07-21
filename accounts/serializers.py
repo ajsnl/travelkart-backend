@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User,Address
+from .models import User,Address,SignupOTP
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.password_validation import validate_password
@@ -60,6 +60,18 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         if password != data['confirm_password']:
             raise serializers.ValidationError("Passwords do not match")
+        
+        
+        # Check for verified SignupOTP
+        email = data.get('email', '').strip().lower()
+        try:
+            signup_otp = SignupOTP.objects.get(email=email)
+            if not signup_otp.is_verified:
+                raise serializers.ValidationError({"email": "Email address is not verified"})
+            if signup_otp.is_expired():
+                raise serializers.ValidationError({"email": "Verification has expired. Please verify your email again"})
+        except SignupOTP.DoesNotExist:
+            raise serializers.ValidationError({"email": "Email verification is required before signup"})
 
         #  use global validator
         StrongPasswordValidator()(password)
@@ -94,6 +106,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(
             password=password,
             referred_by=referred_by,
+            is_verified=True,
             **validated_data
         )
 
@@ -104,6 +117,10 @@ class RegisterSerializer(serializers.ModelSerializer):
                 referred_user=user,
                 status='signed_up'
             )
+
+         
+        # Clean up the verification OTP
+        SignupOTP.objects.filter(email=user.email.lower()).delete()   
 
         return user
     

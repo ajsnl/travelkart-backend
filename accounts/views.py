@@ -1,4 +1,5 @@
 from django.shortcuts import render
+from datetime import timedelta
 from rest_framework import generics, mixins, viewsets, status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
@@ -14,13 +15,14 @@ from rest_framework.exceptions import ValidationError
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from dj_rest_auth.registration.views import SocialLoginView
 
-from .models import User, OTP, Address,Referral
+from .models import User, OTP, Address,Referral,SignupOTP
 from .serializers import (
     RegisterSerializer, LoginSerializer, ProfileSerializer,
     SendEmailOTPSerializer, VerifyEmailOTPSerializer,
     VerifyForgotPasswordOTPSerializer, ResetPasswordSerializer,
     ChangePasswordSerializer, AddressSerializer, ProfilePictureUploadSerializer
 )
+from .utils import generate_otp
 from .authentication import CookieJWTAuthentication, CookieJWTAuthenticationWithoutCSRF
 from .services import AuthService, OtpService, PasswordService, AddressService, ProfileService
 
@@ -221,6 +223,84 @@ class ResendOTPView(mixins.CreateModelMixin, generics.GenericAPIView):
     def post(self, request):
         result = OtpService.resend_email_otp(request.user)
         return Response(result, status=status.HTTP_200_OK)
+
+
+class SendSignupOTPView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            raise ValidationError({"email": ["Email is required"]})
+        email = email.strip().lower()
+        # Validate email is not in use
+        if User.objects.filter(email=email).exists():
+            raise ValidationError({"email": ["Email is already registered"]})
+        # Enforce 60s cooldown
+        last_otp = SignupOTP.objects.filter(email=email).first()
+        if last_otp:
+            diff = timezone.now() - last_otp.created_at
+            if diff < timedelta(seconds=60):
+                remaining = 60 - int(diff.total_seconds())
+                raise ValidationError({"error": f"Wait {remaining}s before requesting new OTP"})
+        otp_code = generate_otp()
+        expires_at = timezone.now() + timedelta(minutes=5)
+        # Delete any existing OTP for this email to reset state
+        SignupOTP.objects.filter(email=email).delete()
+        SignupOTP.objects.create(
+            email=email,
+            otp_code=otp_code,
+            expires_at=expires_at,
+            is_verified=False
+        )
+        # Send email
+        subject = "TravelKart Signup Verification Code"
+        message = (
+            f"Hello,\n\n"
+            f"Thank you for choosing TravelKart.\n\n"
+            f"Your One-Time Password (OTP) for registration is:\n"
+            f"{otp_code}\n\n"
+            f"This code is valid for the next 5 minutes. Please do not share this code with anyone for security reasons.\n\n"
+            f"If you did not request this code, please ignore this email.\n\n"
+            f"Best regards,\n"
+            f"TravelKart Team"
+        )
+        try:
+            from django.core.mail import send_mail
+            from django.conf import settings
+            send_mail(
+                subject,
+                message,
+                settings.EMAIL_HOST_USER,
+                [email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            # Delete the newly created OTP record so the user is not locked by the 60s cooldown on failure
+            SignupOTP.objects.filter(email=email).delete()
+            raise ValidationError({"error": "Failed to send verification email. Please check your connection or try again."})
+        return Response({"message": "OTP sent to email"}, status=status.HTTP_200_OK)
+class VerifySignupOTPView(APIView):
+    authentication_classes = []
+    permission_classes = []
+    def post(self, request):
+        email = request.data.get('email')
+        otp_code = request.data.get('otp')
+        if not email or not otp_code:
+            raise ValidationError({"error": "Email and OTP code are required"})
+        email = email.strip().lower()
+        otp_code = otp_code.strip()
+        try:
+            signup_otp = SignupOTP.objects.get(email=email)
+        except SignupOTP.DoesNotExist:
+            raise ValidationError({"error": "No OTP verification request found for this email"})
+        if signup_otp.is_expired():
+            raise ValidationError({"error": "OTP has expired. Please request a new one"})
+        if signup_otp.otp_code != otp_code:
+            raise ValidationError({"error": "Invalid OTP code"})
+        signup_otp.is_verified = True
+        signup_otp.save()
+        return Response({"message": "Email verified successfully"}, status=status.HTTP_200_OK)
 
 
 class ResetPasswordView(generics.GenericAPIView):

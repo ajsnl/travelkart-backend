@@ -198,15 +198,16 @@ CSRF_COOKIE_SECURE = True
 
 
 CORS_ALLOW_CREDENTIALS = True
+FRONTEND_URL=os.getenv('FRONTEND_URL','http://localhost:5173')
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
+    FRONTEND_URL,
 ]
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.devtunnels\.ms$",
 ]
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
+     FRONTEND_URL,
     "https://*.devtunnels.ms",
     "https://*.inc1.devtunnels.ms",
 ]
