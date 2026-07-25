@@ -101,7 +101,10 @@ class UserProductViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        return ProductService.filter_user_products(queryset, self.action, self.request.query_params)
+        queryset = ProductService.filter_user_products(queryset, self.action, self.request.query_params)
+        if self.action == 'list':
+            queryset = queryset.distinct()
+        return queryset
 
     @action(detail=False, methods=['get'])
     def brands(self, request):
