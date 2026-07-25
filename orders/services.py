@@ -1,6 +1,7 @@
 import random
 from datetime import datetime, timedelta
 from django.db import transaction
+from django.db.models import Q
 from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
 from django.contrib.auth import get_user_model
 
@@ -45,7 +46,12 @@ class OrderService:
                     raise ValidationError({"error": "Coupon is expired or inactive."})
                 if coupon.usage_limit is not None and coupon.used_count >= coupon.usage_limit:
                     raise ValidationError({"error": "Coupon limit has been reached."})
-                has_used = Order.objects.filter(user=user, coupon_code=coupon.code).exists()
+                has_used = Order.objects.filter(
+                    user=user, 
+                    coupon_code=coupon.code
+                ).exclude(
+                    Q(payment_status='failed') | Q(payment_method='RAZORPAY', payment_status='pending')
+                ).exists()
                 if has_used:
                     raise ValidationError({"error": "You have already used this coupon."})
                 if subtotal < coupon.min_order_amount:
@@ -203,8 +209,9 @@ class OrderService:
             )
             
             if coupon:
-                coupon.used_count += 1
-                coupon.save()
+                if payment_method.upper() != 'RAZORPAY':
+                    coupon.used_count += 1
+                    coupon.save()
             
             for order_item in order_items_to_create:
                 order_item.order = order
@@ -593,6 +600,15 @@ class OrderService:
                     order.razorpay_order_id = order_id
                     order.razorpay_signature = signature
                     order.save()
+
+                    if order.coupon_code:
+                        from promotions.models import Coupon
+                        try:
+                            coupon = Coupon.objects.get(code=order.coupon_code)
+                            coupon.used_count += 1
+                            coupon.save()
+                        except Coupon.DoesNotExist:
+                            pass
                     
                     CartService.clear_cart(user)
                 return True
@@ -601,7 +617,8 @@ class OrderService:
         except Exception as e:
             print("Error verifying signature:", e)
             
-        order.payment_status = 'failed'
-        order.save()
+        if order.payment_status != 'failed':
+            order.payment_status = 'failed'
+            order.save()
         return False
 

@@ -1,4 +1,5 @@
 from .models import Banner, Coupon
+from django.db.models import Q
 
 class BannerService:
     @staticmethod
@@ -46,8 +47,9 @@ class CouponService:
 
         now = timezone.now()
         total_active = Coupon.objects.filter(is_active=True, valid_to__gte=now).count()
-        redemptions = Order.objects.exclude(coupon_code__isnull=True).exclude(coupon_code='').count()
-        revenue_saved = Order.objects.exclude(coupon_code__isnull=True).exclude(coupon_code='').aggregate(
+        exclude_condition = Q(payment_status='failed') | Q(payment_method='RAZORPAY', payment_status='pending')
+        redemptions = Order.objects.exclude(coupon_code__isnull=True).exclude(coupon_code='').exclude(exclude_condition).count()
+        revenue_saved = Order.objects.exclude(coupon_code__isnull=True).exclude(coupon_code='').exclude(exclude_condition).aggregate(
             total_saved=Sum('discount')
         )['total_saved'] or 0
         
@@ -110,7 +112,12 @@ class CouponService:
                 continue
             
             # Check user usage
-            has_used = Order.objects.filter(user=user, coupon_code=coupon.code).exists()
+            has_used = Order.objects.filter(
+                user=user, 
+                coupon_code=coupon.code
+            ).exclude(
+                Q(payment_status='failed') | Q(payment_method='RAZORPAY', payment_status='pending')
+            ).exists()
             is_eligible = subtotal >= coupon.min_order_amount
             
             available_coupons.append({
@@ -154,7 +161,12 @@ class CouponService:
         if coupon.usage_limit is not None and coupon.used_count >= coupon.usage_limit:
             raise ValidationError({"error": "Coupon limit has been reached."})
 
-        has_used = Order.objects.filter(user=user, coupon_code=coupon.code).exists()
+        has_used = Order.objects.filter(
+            user=user, 
+            coupon_code=coupon.code
+        ).exclude(
+            Q(payment_status='failed') | Q(payment_method='RAZORPAY', payment_status='pending')
+        ).exists()
         if has_used:
             raise ValidationError({"error": "You have already used this coupon."})
 
