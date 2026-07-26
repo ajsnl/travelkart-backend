@@ -386,15 +386,31 @@ class OrderService:
             # Check if all items in the order are cancelled now
             all_cancelled = not order.items.filter(is_cancelled=False).exists()
 
-            # Update price and quantities
-            price_reduction = item.price * quantity
+            # Update price and quantities using proportional discount calculations
+            raw_item_total = float(item.price) * quantity
             
-            refund_amount = price_reduction
-            if is_processing and all_cancelled:
-                refund_amount += order.shipping_fee
+            if all_cancelled:
+                refund_amount = float(order.total_price)
+                price_reduction = refund_amount
+            else:
+                coupon_discount = 0
+                if order.coupon_code and order.subtotal > 0:
+                    coupon_discount = float(order.subtotal) + float(order.shipping_fee) - float(order.total_price)
+                    if coupon_discount < 0:
+                        coupon_discount = 0
+                
+                if order.subtotal > 0 and coupon_discount > 0:
+                    proportion = raw_item_total / float(order.subtotal)
+                    allocated_discount = coupon_discount * proportion
+                    refund_amount = raw_item_total - allocated_discount
+                else:
+                    refund_amount = raw_item_total
+                
+                price_reduction = refund_amount
 
-            order.subtotal -= price_reduction
-            order.total_price -= price_reduction
+            import decimal
+            order.subtotal -= decimal.Decimal(raw_item_total)
+            order.total_price -= decimal.Decimal(price_reduction)
             if order.subtotal < 0: order.subtotal = 0
             if order.total_price < 0: order.total_price = 0
 
@@ -503,24 +519,46 @@ class OrderService:
                 item.variant.stock += item.quantity
                 item.variant.save()
                 
-            # Reduce subtotal and total_price
-            price_reduction = item.price * item.quantity
+            # Calculate actual refund after applying coupon discount proportionally
+            other_active_items_exist = order.items.filter(is_cancelled=False, is_returned=False, is_return_requested=False).exclude(id=item.id).exists()
+            raw_item_total = float(item.price) * item.quantity
+            
+            if not other_active_items_exist:
+                # If this is the last remaining active item, refund the full remaining total price of the order
+                refund_amount = float(order.total_price)
+            else:
+                coupon_discount = 0
+                if order.coupon_code and order.subtotal > 0:
+                    coupon_discount = float(order.subtotal) + float(order.shipping_fee) - float(order.total_price)
+                    if coupon_discount < 0:
+                        coupon_discount = 0
+                
+                if order.subtotal > 0 and coupon_discount > 0:
+                    proportion = raw_item_total / float(order.subtotal)
+                    allocated_discount = coupon_discount * proportion
+                    refund_amount = raw_item_total - allocated_discount
+                else:
+                    refund_amount = raw_item_total
+            
+            price_reduction = refund_amount
+
             if order.payment_status == 'paid':
                 from wallet.models import Wallet, WalletTransaction
                 import decimal
                 wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
-                wallet.balance += decimal.Decimal(price_reduction)
+                wallet.balance += decimal.Decimal(refund_amount)
                 wallet.save()
                 WalletTransaction.objects.create(
                     user=order.user,
-                    amount=price_reduction,
+                    amount=refund_amount,
                     transaction_type='CREDIT',
                     reason=f"Refund (item return, Order {order.tracking_id})",
                     status='success'
                 )
 
-            order.subtotal -= price_reduction
-            order.total_price -= price_reduction
+            import decimal
+            order.subtotal -= decimal.Decimal(raw_item_total)
+            order.total_price -= decimal.Decimal(price_reduction)
             if order.subtotal < 0: order.subtotal = 0
             if order.total_price < 0: order.total_price = 0
             

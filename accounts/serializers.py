@@ -306,3 +306,21 @@ class ProfilePictureUploadSerializer(serializers.ModelSerializer):
         model = User
         fields = ['profile_picture']
 
+    def validate_profile_picture(self,value):
+        if not value:
+            return value
+        
+        max_size = 5 * 1024 * 1024  # 5MB
+        if value.size > max_size:
+            raise serializers.ValidationError("File size exceeds the 5MB limit.")
+
+        import os
+        ext = os.path.splitext(value.name)[1].lower()
+        valid_extensions = ['.jpg', '.jpeg', '.png', '.webp']
+        if ext not in valid_extensions:
+            raise serializers.ValidationError("Unsupported file extension. Allowed formats: JPG, JPEG, PNG, WEBP.")
+        return value
+
+
+
+

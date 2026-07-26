@@ -114,6 +114,20 @@ class CartItemSerializer(serializers.ModelSerializer):
         if category.parent and (not category.parent.is_active or category.parent.is_deleted):
             raise serializers.ValidationError("The parent category for this product is inactive or deleted.")
 
+        # Enforce available stock limits
+        request = self.context.get('request')
+        user = request.user if request else None
+        exclude_cart = getattr(user, 'cart', None) if user and user.is_authenticated else None
+        if not exclude_cart and self.instance:
+            exclude_cart = self.instance.cart
+            
+        from cart.services import CartService
+        available_stock = CartService.get_available_stock(variant, exclude_cart=exclude_cart)
+        if available_stock <= 0:
+            raise serializers.ValidationError({"quantity": "This item is out of stock."})
+        if quantity > available_stock:
+            raise serializers.ValidationError({"quantity": f"Only {available_stock} item(s) available in stock."})
+
         return data
 
 
