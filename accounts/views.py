@@ -74,7 +74,7 @@ class RefreshView(APIView):
     def post(self, request):
         refresh_token = request.COOKIES.get("refresh_token")
         if not refresh_token:
-            return Response({"error": "No refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Your session has expired. Please log in again."}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
             new_access, new_refresh = AuthService.refresh_tokens(refresh_token)
@@ -82,7 +82,7 @@ class RefreshView(APIView):
             AuthService.set_auth_cookies(response, new_access, new_refresh)
             return response
         except Exception:
-            return Response({"error": "Invalid refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Your session has expired. Please log in again."}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class ProfileView(mixins.RetrieveModelMixin,
