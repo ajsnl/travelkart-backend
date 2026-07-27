@@ -90,14 +90,6 @@ class ProductService:
         
         from django.db.models import Case, When, F, DecimalField, Min
         
-        effective_price_expr = Case(
-            When(variants__offer_type='percentage', variants__offer_value__gt=0,
-                 then=F('variants__price') - (F('variants__price') * F('variants__offer_value') / 100.0)),
-            When(variants__offer_type='flat', variants__offer_value__gt=0,
-                 then=F('variants__price') - F('variants__offer_value')),
-            default=F('variants__price'),
-            output_field=DecimalField()
-        )
 
         if min_price or max_price:
             from products.models import ProductVariant
@@ -123,9 +115,62 @@ class ProductService:
         ordering = query_params.get('ordering')
         if ordering:
             if ordering == 'price_asc' or ordering == 'price_desc':
-                queryset = queryset.annotate(
-                    min_effective_price=Min(effective_price_expr, filter=Q(variants__is_active=True))
+                from django.db.models import OuterRef, Subquery
+                from django.db.models.functions import Coalesce
+                from products.models import ProductVariant
+
+                # Base querysets for variants of the outer product
+                in_stock_variants = ProductVariant.objects.filter(
+                    product=OuterRef('pk'),
+                    is_active=True,
+                    stock__gt=0
+                ).annotate(
+                    effective_price=Case(
+                        When(offer_type='percentage', offer_value__gt=0,
+                             then=F('price') - (F('price') * F('offer_value') / 100.0)),
+                        When(offer_type='flat', offer_value__gt=0,
+                             then=F('price') - F('offer_value')),
+                        default=F('price'),
+                        output_field=DecimalField()
+                    )
                 )
+
+                any_active_variants = ProductVariant.objects.filter(
+                    product=OuterRef('pk'),
+                    is_active=True
+                ).annotate(
+                    effective_price=Case(
+                        When(offer_type='percentage', offer_value__gt=0,
+                             then=F('price') - (F('price') * F('offer_value') / 100.0)),
+                        When(offer_type='flat', offer_value__gt=0,
+                             then=F('price') - F('offer_value')),
+                        default=F('price'),
+                        output_field=DecimalField()
+                    )
+                )
+
+                # Filter the variants inside the subquery using the same price filters
+                if min_price:
+                    in_stock_variants = in_stock_variants.filter(effective_price__gte=min_price)
+                    any_active_variants = any_active_variants.filter(effective_price__gte=min_price)
+                if max_price:
+                    in_stock_variants = in_stock_variants.filter(effective_price__lte=max_price)
+                    any_active_variants = any_active_variants.filter(effective_price__lte=max_price)
+
+                # Annotate queryset with minimum effective price of matching variants
+                queryset = queryset.annotate(
+                    min_in_stock_price=Subquery(
+                        in_stock_variants.values('product').annotate(min_val=Min('effective_price')).values('min_val')[:1],
+                        output_field=DecimalField()
+                    ),
+                    min_any_active_price=Subquery(
+                        any_active_variants.values('product').annotate(min_val=Min('effective_price')).values('min_val')[:1],
+                        output_field=DecimalField()
+                    )
+                ).annotate(
+                    min_effective_price=Coalesce('min_in_stock_price', 'min_any_active_price')
+                )
+
                 if ordering == 'price_asc':
                     queryset = queryset.order_by('min_effective_price')
                 else:
