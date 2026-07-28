@@ -144,6 +144,7 @@ class LogoutView(APIView):
 class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
     permission_classes = [AllowAny]
+    authentication_classes=[]
 
     def get_response(self):
         if not self.user.is_verified:
