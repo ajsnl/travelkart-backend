@@ -94,14 +94,7 @@ class ProductService:
         if min_price or max_price:
             from products.models import ProductVariant
             matching_variants = ProductVariant.objects.filter(is_active=True).annotate(
-                effective_price=Case(
-                    When(offer_type='percentage', offer_value__gt=0,
-                         then=F('price') - (F('price') * F('offer_value') / 100.0)),
-                    When(offer_type='flat', offer_value__gt=0,
-                         then=F('price') - F('offer_value')),
-                    default=F('price'),
-                    output_field=DecimalField()
-                )
+                effective_price=ProductVariant.get_effective_price_expression()
             )
             if min_price:
                 matching_variants = matching_variants.filter(effective_price__gte=min_price)
@@ -125,28 +118,14 @@ class ProductService:
                     is_active=True,
                     stock__gt=0
                 ).annotate(
-                    effective_price=Case(
-                        When(offer_type='percentage', offer_value__gt=0,
-                             then=F('price') - (F('price') * F('offer_value') / 100.0)),
-                        When(offer_type='flat', offer_value__gt=0,
-                             then=F('price') - F('offer_value')),
-                        default=F('price'),
-                        output_field=DecimalField()
-                    )
+                     effective_price=ProductVariant.get_effective_price_expression()
                 )
 
                 any_active_variants = ProductVariant.objects.filter(
                     product=OuterRef('pk'),
                     is_active=True
                 ).annotate(
-                    effective_price=Case(
-                        When(offer_type='percentage', offer_value__gt=0,
-                             then=F('price') - (F('price') * F('offer_value') / 100.0)),
-                        When(offer_type='flat', offer_value__gt=0,
-                             then=F('price') - F('offer_value')),
-                        default=F('price'),
-                        output_field=DecimalField()
-                    )
+                    effective_price=ProductVariant.get_effective_price_expression()
                 )
 
                 # Filter the variants inside the subquery using the same price filters

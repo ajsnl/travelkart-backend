@@ -524,6 +524,14 @@ class ReferralStatsView(APIView):
                 total_earned += 99
                 gold_days_earned += 3
 
+        # Check if this user was referred and rewarded
+        try:
+            incoming_referral = Referral.objects.get(referred_user=user)
+            if incoming_referral.status == 'rewarded':
+                total_earned += 50
+        except Referral.DoesNotExist:
+            pass    
+
         return Response({
             "referral_code": user.referral_code,
             "referral_url": referral_url,

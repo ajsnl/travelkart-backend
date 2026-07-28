@@ -123,24 +123,19 @@ class CartService:
     @staticmethod
     def get_item_subtotal(item):
         """Calculates item subtotal after applicable discounts."""
-        price = item.variant.price
-        if item.variant.offer_type != 'none' and item.variant.offer_value > 0:
-            if item.variant.offer_type == 'percentage':
-                discount = price * (item.variant.offer_value / 100)
-                price = max(0, price - discount)
-            elif item.variant.offer_type == 'flat':
-                price = max(0, price - item.variant.offer_value)
+        eff = item.variant.get_effective_offer()
+        if eff['offer_type'] != 'none':
+            price = eff['offer_price']
+        else:
+            price = item.variant.price
         return price * item.quantity
 
     @staticmethod
     def get_item_discount_amount(item):
         """Calculates item total discount amount."""
-        if item.variant.offer_type != 'none' and item.variant.offer_value > 0:
-            price = item.variant.price
-            if item.variant.offer_type == 'percentage':
-                return (price * (item.variant.offer_value / 100)) * item.quantity
-            elif item.variant.offer_type == 'flat':
-                return item.variant.offer_value * item.quantity
+        eff = item.variant.get_effective_offer()
+        if eff['offer_type'] != 'none':
+            return eff['discount_amount'] * item.quantity
         return Decimal('0.00')
 
     @classmethod

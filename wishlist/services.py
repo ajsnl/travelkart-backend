@@ -15,15 +15,8 @@ class WishlistService:
 
         if ordering:
             if ordering == 'price_asc' or ordering == 'price_desc':
-                from django.db.models import Case, When, F, DecimalField
-                effective_price_expr = Case(
-                    When(product__variants__offer_type='percentage', product__variants__offer_value__gt=0,
-                         then=F('product__variants__price') - (F('product__variants__price') * F('product__variants__offer_value') / 100.0)),
-                    When(product__variants__offer_type='flat', product__variants__offer_value__gt=0,
-                         then=F('product__variants__price') - F('product__variants__offer_value')),
-                    default=F('product__variants__price'),
-                    output_field=DecimalField()
-                )
+                from products.models import ProductVariant
+                effective_price_expr = ProductVariant.get_effective_price_expression(prefix='product__variants__')
                 queryset = queryset.annotate(
                     min_price=Min(effective_price_expr, filter=Q(product__variants__is_active=True))
                 )

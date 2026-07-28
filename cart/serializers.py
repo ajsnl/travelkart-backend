@@ -31,12 +31,24 @@ class SimpleVariantSerializer(serializers.ModelSerializer):
         return True
 
     def get_offer_price(self, obj):
-        if obj.offer_type == 'percentage' and obj.offer_value > 0:
-            discount = obj.price * (obj.offer_value / 100)
-            return max(0, obj.price - discount)
-        elif obj.offer_type == 'flat' and obj.offer_value > 0:
-            return max(0, obj.price - obj.offer_value)
-        return None
+        eff = obj.get_effective_offer()
+        return eff['offer_price'] if eff['offer_type'] != 'none' else None
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        eff = instance.get_effective_offer()
+        if eff['offer_type'] != 'none':
+            representation['offer_price'] = eff['offer_price']
+            representation['offer_type'] = eff['offer_type']
+            representation['offer_value'] = eff['offer_value']
+            representation['offer_source'] = eff['source']
+        else:
+            representation['offer_price'] = None
+            representation['offer_type'] = 'none'
+            representation['offer_value'] = 0.00
+            representation['offer_source'] = 'none'
+        return representation
+        
 
     def get_image_url(self, obj):
         # Prefer variant's primary or first image
