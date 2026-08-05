@@ -240,6 +240,23 @@ class OrderService:
                 order = Order.objects.get(tracking_id=tracking_id, user=user)
         except Order.DoesNotExist:
             raise NotFound({"error": "Order not found."})
+
+        # Transition validation logic (enforced for both users and admins)
+        if status != order.status:
+            ALLOWED_TRANSITIONS = {
+                'processing': ['shipped', 'cancelled'],
+                'shipped': ['out_for_delivery', 'cancelled'],
+                'out_for_delivery': ['delivered', 'cancelled'],
+                'delivered': ['return_requested', 'returned'],
+                'return_requested': ['returned', 'delivered'],
+                'cancelled': [],
+                'returned': []
+            }
+            allowed = ALLOWED_TRANSITIONS.get(order.status, [])
+            if status not in allowed:
+                raise ValidationError({
+                    "error": f"Cannot transition order from '{order.status}' to '{status}'. Allowed next states: {', '.join(allowed) if allowed else 'None'}"
+                })
             
         if not is_admin:
             if order.status in ['cancelled', 'returned'] and status != order.status:

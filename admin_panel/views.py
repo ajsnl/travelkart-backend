@@ -132,8 +132,21 @@ class AdminOrderDetailView(APIView):
             if status not in valid_statuses:
                 return Response({"error": f"Invalid status: {status}"}, status=400)
             
-            if order.status == 'delivered' and status in ['processing', 'shipped', 'out_for_delivery']:
-                return Response({"error": "Delivered orders cannot be changed back to processing, shipped, or out for delivery."}, status=400)
+            if status != order.status:
+                ALLOWED_TRANSITIONS = {
+                    'processing': ['shipped', 'cancelled'],
+                    'shipped': ['out_for_delivery', 'cancelled'],
+                    'out_for_delivery': ['delivered', 'cancelled'],
+                    'delivered': ['return_requested', 'returned'],
+                    'return_requested': ['returned', 'delivered'],
+                    'cancelled': [],
+                    'returned': []
+                }
+                allowed = ALLOWED_TRANSITIONS.get(order.status, [])
+                if status not in allowed:
+                    return Response({
+                        "error": f"Cannot transition order from '{order.status}' to '{status}'. Allowed transitions: {', '.join(allowed) if allowed else 'None'}"
+                    }, status=400)
             
             # Stock restoration logic
             if status in ['returned', 'cancelled'] and order.status not in ['returned', 'cancelled']:
