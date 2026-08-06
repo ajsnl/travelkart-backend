@@ -14,8 +14,24 @@ class Coupon(models.Model):
     is_active = models.BooleanField(default=True)
     valid_from = models.DateTimeField()
     valid_to = models.DateTimeField()
-    usage_limit=models.IntegerField(null=True)
+    usage_limit=models.IntegerField(null=True,blank=True)
     used_count=models.IntegerField(default=0)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        
+        if self.discount_type == "FLAT":
+            if self.discount_value <= 0:
+                raise ValidationError({"discount_value": "Flat discount value must be greater than 0."})
+            if self.min_order_amount <= self.discount_value:
+                raise ValidationError({"min_order_amount": "Minimum purchase requirement must be greater than the discount value."})
+        elif self.discount_type == "PERCENT":
+            if self.discount_value <= 0 or self.discount_value > 100:
+                raise ValidationError({"discount_value": "Percent discount value must be between 1 and 100."})
+        
+        if self.valid_from and self.valid_to and self.valid_from >= self.valid_to:
+            raise ValidationError({"valid_to": "Expiration date must be after the starting activation date."})
+
 
 class Banner(models.Model):
     title = models.CharField(max_length=100)

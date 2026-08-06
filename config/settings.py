@@ -30,7 +30,8 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-key-for-local-developm
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,*').split(',')
+
 
 
 # Application definition
@@ -198,19 +199,23 @@ CSRF_COOKIE_SECURE = True
 
 
 CORS_ALLOW_CREDENTIALS = True
-FRONTEND_URL=os.getenv('FRONTEND_URL','http://localhost:5173')
+FRONTEND_URL = os.getenv('FRONTEND_URL','http://localhost:5173')
 
 CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,
 ]
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://.*\.devtunnels\.ms$",
-]
+CORS_ALLOWED_ORIGIN_REGEXES = []
 CSRF_TRUSTED_ORIGINS = [
      FRONTEND_URL,
-    "https://*.devtunnels.ms",
-    "https://*.inc1.devtunnels.ms",
 ]
+
+if DEBUG:
+    CORS_ALLOWED_ORIGIN_REGEXES.append(r"^https://.*\.devtunnels\.ms$")
+    CSRF_TRUSTED_ORIGINS.extend([
+        "https://*.devtunnels.ms",
+        "https://*.inc1.devtunnels.ms",
+    ])
+
 
 REST_AUTH = {
     'TOKEN_MODEL': None
@@ -234,7 +239,7 @@ SOCIALACCOUNT_PROVIDERS = {
 
 ACCOUNT_UNIQUE_EMAIL = True
 SOCIALACCOUNT_AUTO_SIGNUP = True
-ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = "none" 
 
 MEDIA_URL = '/media/'
@@ -244,3 +249,12 @@ MEDIA_ROOT = BASE_DIR
 RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', 'rzp_test_dummy_key_id')
 RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET', 'dummy_key_secret')
 
+# Production Security Settings
+# if not DEBUG:
+#     SECURE_SSL_REDIRECT = True
+#     SECURE_HSTS_SECONDS = 31536000  # 1 year
+#     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+#     SECURE_HSTS_PRELOAD = True
+#     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+#     SECURE_CONTENT_TYPE_NOSNIFF = True
+#     SECURE_BROWSER_XSS_FILTER = True

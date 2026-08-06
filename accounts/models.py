@@ -46,7 +46,7 @@ class User(AbstractUser):
     phone = models.CharField(
     max_length=15,
     unique=True,
-    validators=[RegexValidator(r'^\+?\d{10,15}$', "Enter valid phone number")],
+    validators=[RegexValidator(r'^[6-9]\d{9}$', "Enter a valid 10-digit phone number starting with 6, 7, 8, or 9")],
     null=True,
     blank=True
 )

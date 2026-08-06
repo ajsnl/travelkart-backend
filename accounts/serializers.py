@@ -39,8 +39,8 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def validate_phone(self, value):
         import re
-        if value and not re.match(r'^\d{10}$', value):
-            raise serializers.ValidationError("Phone number must be exactly 10 digits.")
+        if value and not re.match(r'^[6-9]\d{9}$', value):
+            raise serializers.ValidationError("Phone number must be exactly 10 digits and start with 6, 7, 8, or 9.")
         return value
 
     def validate_first_name(self, value):
@@ -201,8 +201,8 @@ class AddressSerializer(serializers.ModelSerializer):
         read_only_fields = ['user']
 
     def validate_phone(self, value):
-        if not re.fullmatch(r'\d{10}', value):
-            raise serializers.ValidationError("Enter a valid phone number (10 digits)")
+        if not re.fullmatch(r'[6-9]\d{9}', value):
+            raise serializers.ValidationError("Enter a valid 10-digit phone number starting with 6, 7, 8, or 9")
         return value
 
     def validate_pincode(self, value):
@@ -278,8 +278,8 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     def validate_phone(self, value):
         import re
-        if value and not re.match(r'^\d{10}$', value):
-            raise serializers.ValidationError("Phone number must be exactly 10 digits.")
+        if value and not re.match(r'^[6-9]\d{9}$', value):
+            raise serializers.ValidationError("Phone number must be exactly 10 digits and start with 6, 7, 8, or 9.")
         return value
 
     def validate_first_name(self, value):

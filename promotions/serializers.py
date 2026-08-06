@@ -28,6 +28,31 @@ class CouponSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "valid_to": "Expiration date must be after the starting activation date."
             })
+        
+        discount_type = data.get('discount_type')
+        if not discount_type and self.instance:
+            discount_type = self.instance.discount_type
+        discount_value = data.get('discount_value')
+        if discount_value is None and self.instance:
+            discount_value = self.instance.discount_value
+        min_order_amount = data.get('min_order_amount')
+        if min_order_amount is None and self.instance:
+            min_order_amount = self.instance.min_order_amount
+        if discount_type == 'FLAT' and discount_value is not None:
+            if discount_value <= 0:
+                raise serializers.ValidationError({
+                    "discount_value": "Flat discount value must be greater than 0."
+                })
+            if min_order_amount is not None and min_order_amount <= discount_value:
+                raise serializers.ValidationError({
+                    "min_order_amount": "Minimum purchase requirement must be greater than the discount value."
+                })
+        elif discount_type == 'PERCENT' and discount_value is not None:
+            if discount_value <= 0 or discount_value > 100:
+                raise serializers.ValidationError({
+                    "discount_value": "Percent discount value must be between 1 and 100."
+                })
+            
             
         return data
 
