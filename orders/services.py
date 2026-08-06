@@ -247,7 +247,7 @@ class OrderService:
                 'processing': ['shipped', 'cancelled'],
                 'shipped': ['out_for_delivery', 'cancelled'],
                 'out_for_delivery': ['delivered', 'cancelled'],
-                'delivered': ['return_requested', 'returned'],
+                'delivered': ['returned'] if is_admin else ['return_requested', 'returned'],
                 'return_requested': ['returned', 'delivered'],
                 'cancelled': [],
                 'returned': []

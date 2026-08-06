@@ -128,52 +128,46 @@ class AdminOrderDetailView(APIView):
         delivery_estimate = request.data.get('delivery_estimate')
 
         if status:
-            valid_statuses = [choice[0] for choice in Order.STATUS_CHOICES]
-            if status not in valid_statuses:
-                return Response({"error": f"Invalid status: {status}"}, status=400)
+            from orders.services import OrderService
+            try:
+                # Use OrderService.simulate_order_status to handle status validation, stock restoration, and wallet refund!
+                order = OrderService.simulate_order_status(
+                    tracking_id=tracking_id,
+                    status=status,
+                    user=request.user,
+                    reason="Admin cancelled" if status == "cancelled" else "Admin returned" if status == "returned" else None
+                )
+            except Exception as e:
+                # Catch validation/transition errors from the service and return 400 Bad Request
+                error_msg = getattr(e, 'detail', None) or getattr(e, 'message', None) or str(e)
+                if isinstance(error_msg, dict):
+                    return Response(error_msg, status=400)
+                return Response({"error": error_msg}, status=400)
             
-            if status != order.status:
-                ALLOWED_TRANSITIONS = {
-                    'processing': ['shipped', 'cancelled'],
-                    'shipped': ['out_for_delivery', 'cancelled'],
-                    'out_for_delivery': ['delivered', 'cancelled'],
-                    'delivered': ['return_requested', 'returned'],
-                    'return_requested': ['returned', 'delivered'],
-                    'cancelled': [],
-                    'returned': []
-                }
-                allowed = ALLOWED_TRANSITIONS.get(order.status, [])
-                if status not in allowed:
-                    return Response({
-                        "error": f"Cannot transition order from '{order.status}' to '{status}'. Allowed transitions: {', '.join(allowed) if allowed else 'None'}"
-                    }, status=400)
-            
-            # Stock restoration logic
-            if status in ['returned', 'cancelled'] and order.status not in ['returned', 'cancelled']:
-                with transaction.atomic():
-                    for item in order.items.all():
-                        # Only restore stock for items that are not already cancelled or returned individually
-                        if item.variant and not getattr(item, 'is_cancelled', False) and not getattr(item, 'is_returned', False):
-                            item.variant.stock += item.quantity
-                            item.variant.save()
-                            if status == 'cancelled':
-                                item.is_cancelled = True
-                                item.cancel_reason = "Admin cancelled"
-                            else:
-                                item.is_returned = True
-                                item.return_reason = "Admin returned"
-                            item.save()
-
-            order.status = status
-            if status == 'delivered' and order.payment_method == 'COD':
-                order.payment_status = 'paid'
-            if status in ['cancelled', 'returned'] and order.payment_status == 'paid':
-                order.payment_status = 'refunded'
 
         if payment_status:
             valid_payment_statuses = ['pending', 'paid', 'failed', 'refunded']
             if payment_status not in valid_payment_statuses:
                 return Response({"error": f"Invalid payment status: {payment_status}"}, status=400)
+
+             # Lock refunded status (cannot change away from refunded)
+            if order.payment_status == 'refunded' and payment_status != 'refunded':
+                return Response({
+                    "error": "Cannot change the payment status of an already refunded order."
+                }, status=400)
+            
+            # Enforce refunded status for cancelled or returned orders
+            final_status = status if status else order.status
+            if final_status in ['cancelled', 'returned'] and payment_status != 'refunded':
+                return Response({
+                    "error": "Payment status for Cancelled or Returned orders must remain 'Refunded'."
+                }, status=400)
+
+            if payment_status == 'refunded':
+                if final_status not in ['cancelled', 'returned']:
+                    return Response({
+                        "error": "Cannot set payment status to 'Refunded' unless the order is cancelled or returned."
+                    }, status=400)
             order.payment_status = payment_status
 
         if delivery_estimate is not None:
