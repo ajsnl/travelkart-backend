@@ -1,6 +1,6 @@
 from django.urls import path, include
 
-urlpatterns = [
+urlpatterns = [ 
     path('auth/', include('accounts.urls')),
     
     # User routes

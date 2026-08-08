@@ -17,16 +17,16 @@ class AuthService:
             key="access_token",
             value=access_token,
             httponly=True,
-            secure=False,      # True in production (HTTPS)
-            samesite="Lax",
+            secure=True,      # True in production (HTTPS)
+            samesite="None",
             path="/",
         )
         response.set_cookie(
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            secure=False,
-            samesite="Lax",
+            secure=True,
+            samesite="None",
             path="/",
         )
         return response
@@ -35,13 +35,11 @@ class AuthService:
     def delete_auth_cookies(response):
         response.delete_cookie(
             "access_token",
-            path="/",
-            samesite="Lax",
+            path="/"
         )
         response.delete_cookie(
             "refresh_token",
-            path="/",
-            samesite="Lax",
+            path="/"
         )
         return response
 
