@@ -162,6 +162,12 @@ class OrderService:
                     "Authorization": f"Basic {base64_auth}",
                     "Content-Type": "application/json"
                 }
+                # Razorpay maximum single transaction limit is ₹5,00,000 (5 Lakhs)
+                if total_price > 500000:
+                    raise ValidationError({
+                        "error": "The maximum allowed order payment via Razorpay is ₹5,00,000 (5 Lakhs). Please contact support for high-value orders."
+                    })
+
                 payload = {
                     "amount": int(total_price * 100),
                     "currency": "INR",
@@ -171,18 +177,27 @@ class OrderService:
                 if response.status_code in [200, 201]:
                     razorpay_order_id = response.json().get('id')
                 else:
-                    raise ValidationError({
-                        "error": f"Razorpay order initialization failed with status {response.status_code}: {response.text}"
-                    })
-            except requests.RequestException as e:
+                    try:
+                        err_json = response.json()
+                        err_desc = err_json.get('error', {}).get('description', '')
+                        if 'amount exceeds' in err_desc.lower():
+                            user_msg = "The order total exceeds the maximum single transaction limit of ₹5,00,000 permitted by the payment gateway."
+                        elif err_desc:
+                            user_msg = err_desc
+                        else:
+                            user_msg = "Payment gateway is unable to process this order at the moment. Please try again later."
+                    except Exception:
+                        user_msg = "Failed to initialize payment gateway for this order. Please try again."
+                    raise ValidationError({"error": user_msg})
+            except requests.RequestException:
                 raise ValidationError({
-                    "error": f"Network error connecting to Razorpay payment gateway: {str(e)}"
+                    "error": "Unable to connect to the payment gateway. Please check your internet connection and try again."
                 })
             except ValidationError:
                 raise
             except Exception as e:
                 raise ValidationError({
-                    "error": f"An error occurred while setting up Razorpay checkout: {str(e)}"
+                    "error": f"An error occurred while setting up payment: {str(e)}"
                 })
 
         with transaction.atomic():

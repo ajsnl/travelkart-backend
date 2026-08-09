@@ -419,13 +419,19 @@ class GoldMembership(APIView):
                     "razorpay_key_id": key_id
                 })          
             else:
-                raise ValidationError({"error": f"Razorpay order initialization failed with status {response.status_code}: {response.text}"})
-        except requests.RequestException as e:
-            raise ValidationError({"error": f"Network error connecting to Razorpay: {str(e)}"})
+                try:
+                    err_json = response.json()
+                    err_desc = err_json.get('error', {}).get('description', '')
+                    user_msg = err_desc or "Payment gateway is unable to process this request. Please try again later."
+                except Exception:
+                    user_msg = "Failed to initialize membership payment. Please try again."
+                raise ValidationError({"error": user_msg})
+        except requests.RequestException:
+            raise ValidationError({"error": "Unable to connect to the payment gateway. Please check your internet connection and try again."})
         except ValidationError:
             raise
         except Exception as e:
-            raise ValidationError({"error": f"An error occurred: {str(e)}"})
+            raise ValidationError({"error": f"An error occurred while processing your request: {str(e)}"})
         
     def post(self,request):
         user=request.user

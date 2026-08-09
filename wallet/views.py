@@ -65,12 +65,16 @@ class AddWalletMoneyView(APIView):
             if amount <= 0:
                 raise ValueError()
         except ValueError:
-            raise ValidationError({"error": "Invalid amount specified."})
+            raise ValidationError({"error": "Please enter a valid positive amount."})
+
+        # Razorpay maximum single transaction limit is ₹5,00,000 (5 Lakhs)
+        if amount > 500000:
+            raise ValidationError({"error": "The maximum deposit limit per transaction is ₹5,00,000 (5 Lakhs). Please enter an amount up to ₹5,00,000."})
 
         key_id = getattr(settings, 'RAZORPAY_KEY_ID', None)
         key_secret = getattr(settings, 'RAZORPAY_KEY_SECRET', None)
         if not key_id or not key_secret or key_id.startswith('dummy') or key_secret.startswith('dummy'):
-            raise ValidationError({"error": "Razorpay payment credentials are not configured on the server. Please contact support."})
+            raise ValidationError({"error": "Payment gateway credentials are not configured on the server. Please contact support."})
 
         try:
             auth_str = f"{key_id}:{key_secret}"
@@ -89,13 +93,24 @@ class AddWalletMoneyView(APIView):
             if response.status_code in [200, 201]:
                 razorpay_order_id = response.json().get('id')
             else:
-                raise ValidationError({"error": f"Razorpay order initialization failed with status {response.status_code}: {response.text}"})
-        except requests.RequestException as e:
-            raise ValidationError({"error": f"Network error connecting to Razorpay: {str(e)}"})
+                try:
+                    err_json = response.json()
+                    err_desc = err_json.get('error', {}).get('description', '')
+                    if 'amount exceeds' in err_desc.lower():
+                        user_msg = "The amount exceeds the maximum single transaction limit of ₹5,00,000 permitted by the payment gateway."
+                    elif err_desc:
+                        user_msg = err_desc
+                    else:
+                        user_msg = "Payment gateway is unable to process this request. Please try again later."
+                except Exception:
+                    user_msg = "Failed to initialize payment with the payment gateway. Please try again."
+                raise ValidationError({"error": user_msg})
+        except requests.RequestException:
+            raise ValidationError({"error": "Unable to connect to the payment gateway. Please check your internet connection and try again."})
         except ValidationError:
             raise
         except Exception as e:
-            raise ValidationError({"error": f"An error occurred: {str(e)}"})
+            raise ValidationError({"error": f"An error occurred while processing your request: {str(e)}"})
 
         WalletTransaction.objects.create(
             user=request.user,
