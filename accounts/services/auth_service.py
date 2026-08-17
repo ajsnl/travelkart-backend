@@ -41,11 +41,13 @@ class AuthService:
     @staticmethod
     def delete_auth_cookies(response):
         from django.conf import settings
+        samesite = "Lax" if settings.DEBUG else "None"
         domain = settings.SESSION_COOKIE_DOMAIN if not settings.DEBUG else None
         response.delete_cookie(
             "access_token",
             domain=domain,
-            path="/"
+            path="/",
+            samesite=samesite
         )
         response.delete_cookie(
             "refresh_token",
