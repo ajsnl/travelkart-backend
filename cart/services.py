@@ -55,8 +55,6 @@ class CartService:
         else:
             CartItem.objects.create(cart=cart, variant=variant, quantity=target_quantity)
 
-        # Remove from wishlist when added to cart
-        Wishlist.objects.filter(user=user, product=variant.product).delete()
         return cart
 
     @classmethod
