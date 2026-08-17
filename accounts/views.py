@@ -123,8 +123,8 @@ class UserMeView(APIView):
 
 
 class LogoutView(APIView):
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes = [CookieJWTAuthenticationWithoutCSRF]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         refresh_token = request.COOKIES.get("refresh_token")
