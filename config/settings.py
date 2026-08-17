@@ -30,7 +30,14 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-key-for-local-developm
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS =  os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,*').split(',')
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv(
+        'ALLOWED_HOSTS',
+        'localhost,127.0.0.1'
+    ).split(',')
+    if host.strip()
+]
 
 
 # Application definition
@@ -190,37 +197,72 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
-SESSION_COOKIE_SAMESITE = "None"
-SESSION_COOKIE_SECURE = True
 
-CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SAMESITE = "None"
-CSRF_COOKIE_SECURE = True
-CSRF_COOKIE_DOMAIN = ".travelkart.ajaysunil.in"  
-SESSION_COOKIE_DOMAIN = ".travelkart.ajaysunil.in"
+
+# Cookie Configuration
+
+if DEBUG:
+    # Local development
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = False
+    SESSION_COOKIE_DOMAIN = None
+
+    CSRF_COOKIE_HTTPONLY = False
+    CSRF_COOKIE_SAMESITE = "Lax"
+    CSRF_COOKIE_SECURE = False
+    CSRF_COOKIE_DOMAIN = None
+
+else:
+    # Production
+    SESSION_COOKIE_SAMESITE = "None"
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_DOMAIN = ".travelkart.ajaysunil.in"
+
+    CSRF_COOKIE_HTTPONLY = False
+    CSRF_COOKIE_SAMESITE = "None"
+    CSRF_COOKIE_SECURE = True
+    CSRF_COOKIE_DOMAIN = ".travelkart.ajaysunil.in"
 
 
 CORS_ALLOW_CREDENTIALS = True
-FRONTEND_URL = os.getenv('FRONTEND_URL','https://travelkart.ajaysunil.in')
+
+FRONTEND_URL = os.getenv(
+    'FRONTEND_URL',
+    'http://localhost:5173'
+).strip()
 
 CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,
     "https://travelkart.ajaysunil.in",
     "http://localhost:5173",
 ]
-CORS_ALLOWED_ORIGIN_REGEXES = [ r"^https://.*\.vercel\.app$",]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+]
+
 CSRF_TRUSTED_ORIGINS = [
-     FRONTEND_URL,
-    "https://travelkart.ajaysunil.in",
-    "https://api.travelkart.ajaysunil.in",
-    "https://*.vercel.app",
+    FRONTEND_URL,
 ]
 
 if DEBUG:
-    CORS_ALLOWED_ORIGIN_REGEXES.append(r"^https://.*\.devtunnels\.ms$")
+
+    CORS_ALLOWED_ORIGIN_REGEXES.append(
+        r"^https://.*\.devtunnels\.ms$"
+    )
+
     CSRF_TRUSTED_ORIGINS.extend([
+        "http://localhost:5173",
         "https://*.devtunnels.ms",
         "https://*.inc1.devtunnels.ms",
+    ])
+
+else:
+
+    CSRF_TRUSTED_ORIGINS.extend([
+        "https://travelkart.ajaysunil.in",
+        "https://api.travelkart.ajaysunil.in",
+        "https://*.vercel.app",
     ])
 
 
