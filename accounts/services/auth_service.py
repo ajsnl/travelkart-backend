@@ -13,32 +13,43 @@ class AuthService:
     @staticmethod
     def set_auth_cookies(response, access_token, refresh_token):
         """Attaches access and refresh tokens to response cookies."""
+        from django.conf import settings
+        secure = not settings.DEBUG
+        samesite = "Lax" if settings.DEBUG else "None"
+        domain = settings.SESSION_COOKIE_DOMAIN if not settings.DEBUG else None
+
         response.set_cookie(
             key="access_token",
             value=access_token,
             httponly=True,
-            secure=True,      # True in production (HTTPS)
-            samesite="None",
+            secure=secure,      # True in production (HTTPS)
+            samesite=samesite,
+            domain=domain,
             path="/",
         )
         response.set_cookie(
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            secure=True,
-            samesite="None",
+            secure=secure,
+            samesite=samesite,
+            domain=domain,
             path="/",
         )
         return response
 
     @staticmethod
     def delete_auth_cookies(response):
+        from django.conf import settings
+        domain = settings.SESSION_COOKIE_DOMAIN if not settings.DEBUG else None
         response.delete_cookie(
             "access_token",
+            domain=domain,
             path="/"
         )
         response.delete_cookie(
             "refresh_token",
+            domain=domain,
             path="/"
         )
         return response
